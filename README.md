@@ -24,7 +24,7 @@ You give a goal. Claude reads the project, proposes milestones and **how many De
 
 - Claude Code
 - [Devin CLI](https://devin.ai) installed and logged in (`devin auth login`), the project folder trusted once (`devin` in it)
-- `bash`, `git`, `python3`, `sqlite3`, `tar` (developed on macOS; Linux untested, `stat -f` and `date -r` calls are macOS forms)
+- `bash`, `git`, `python3`, `sqlite3`, `tar` (developed on macOS; the stat/date calls fall back to GNU forms, Linux still untested)
 
 ## Install
 
@@ -61,9 +61,13 @@ scripts/crew-worktree.sh    worktree add / merge / remove
 scripts/crew-guard.sh       lock, baseline/regress, snapshot, scope check, restore
 scripts/crew-observe.sh     what is a lane really doing; why did it fail
 scripts/crew-qa.sh          mechanical QA over the diff
+scripts/crew-verify.sh      run TASKS.md acceptance commands, check contract freshness
+scripts/crew-router.sh      wake lanes that get mail; exits when the crew is quiet
+scripts/crew-report.sh      per-lane nudges, kills, elapsed time
 scripts/crew-status.sh      one-screen status
 scripts/lane-msg.sh         mail between lanes
 templates/                  lane preamble and role presets
+tests/smoke.sh              offline regression test (fake devin, shellcheck), `bash tests/smoke.sh`
 ```
 
 ## Status

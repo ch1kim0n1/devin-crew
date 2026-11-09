@@ -4,7 +4,7 @@
 #   model "-"      reuse the model this lane was first launched with (always swe-2-flash-high)
 #   task_file "-"  wake-up: the lane only gets "you have new mail"
 # env: CREW_ROLE=<name>        first launch only: append templates/roles/<name>.md to the preamble
-#      CREW_MAX_SECS=2700      wall-clock cap per launch (status failed(timeout))
+#      CREW_MAX_SECS=2700      wall-clock cap per turn, nudges included (status failed(timeout))
 #      CREW_STALL_RETRIES=2    automatic kill+nudge attempts when the lane stalls (see crew-observe.sh)
 # First call for a lane starts a new Devin session; later calls resume it, unread mail prepended.
 # A lane with .devin-crew/lanes/<lane>.workdir (see crew-worktree.sh) runs inside that git worktree.
@@ -27,7 +27,7 @@ if [ "$model" != "swe-2-flash-high" ]; then
 fi
 echo "$model" > "$model_file"
 
-n=$(ls "$crew/logs" | grep -c "^$lane\.")
+n=0; for f in "$crew/logs/$lane".[0-9]*.log; do [ -e "$f" ] && n=$((n + 1)); done
 log="$crew/logs/$lane.$((n + 1)).log"
 
 body=""; [ "$task" != "-" ] && body=$(cat "$task")
@@ -51,14 +51,14 @@ fi
 echo $$ > "$crew/lanes/$lane.pid"; date +%s > "$crew/lanes/$lane.started"
 echo running > "$crew/lanes/$lane.status"
 cd "$workdir" || exit 2
-max=${CREW_MAX_SECS:-2700}; retries=${CREW_STALL_RETRIES:-2}; start=$(date +%s)
+max=${CREW_MAX_SECS:-2700}; retries=${CREW_STALL_RETRIES:-2}; t0=$(date +%s); start=$t0
 : > "$log"
 
 # run_turn <prompt> [devin args...]: one devin -p turn with a watchdog.
 # Sets: code, timedout (0/1), stall_reason ("" or "<STATE>: why"). Returns when devin exits or is killed.
 run_turn() {
   local p=$1; shift
-  stall_reason=""; timedout=0
+  stall_reason=""; timedout=0; start=$(date +%s)   # the wall-clock cap is per turn, so a nudge gets a fresh budget
   devin -p "$p" --model "$model" --permission-mode "$perm" --export "$crew/lanes/$lane.export.json" "$@" >>"$log" 2>&1 &
   local dpid=$!; echo "$dpid" > "$crew/lanes/$lane.devinpid"
   local next_check=$(( $(date +%s) + 90 )) now r rc tool_kills=0
@@ -106,11 +106,12 @@ sid=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["session_id
 [ -n "$sid" ] && echo "$sid" > "$sid_file"
 if [ "$timedout" -eq 1 ]; then st="failed(timeout)"
 elif [ -n "$stall_reason" ]; then st="failed(stalled: ${stall_reason%%:*})"
-elif [ "$code" -eq 0 ]; then st=done
+elif [ "$code" -eq 0 ]; then st="done"
 else st="failed($code)"; fi
 echo "$st" > "$crew/lanes/$lane.status"
 rm -f "$crew/lanes/$lane.pid"
-ev "exit status=$st session=${sid:-unknown}"
+ev "exit status=$st session=${sid:-unknown} elapsed=$(( $(date +%s) - t0 )) nudges=$attempt"
 echo "lane=$lane status=$st session=${sid:-unknown} log=$log"
-[ "$st" = done ] || echo "diagnose: bash $skill_dir/scripts/crew-observe.sh $proj $lane"
-exit $([ "$st" = done ] && echo 0 || echo "${code:-1}")
+[ "$st" = "done" ] || echo "diagnose: bash $skill_dir/scripts/crew-observe.sh $proj $lane"
+if [ "$st" = "done" ]; then exit 0; fi
+exit "${code:-1}"

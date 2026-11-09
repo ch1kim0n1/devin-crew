@@ -17,7 +17,8 @@ crew="$proj/.devin-crew"; mkdir -p "$crew"
 cd "$proj" || exit 2
 
 # ponytail: skips VCS/build/dependency dirs; add more with CREW_PRUNE="dir1 dir2"
-prune=(node_modules .git .devin-crew dist build .next target venv .venv __pycache__ $(echo "${CREW_PRUNE:-}"))
+prune=(node_modules .git .devin-crew dist build .next target venv .venv __pycache__)
+read -ra extra_prune <<< "${CREW_PRUNE:-}"; prune+=(${extra_prune[@]+"${extra_prune[@]}"})
 list_files() {
   local args=() d
   for d in "${prune[@]}"; do args+=(-name "$d" -o); done

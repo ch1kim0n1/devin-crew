@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Fake `devin` for tests/smoke.sh. Records args and prompt in $STUB_OUT, writes the --export JSON, exits $STUB_EXIT.
+# STUB_APPEND_BOARD="<text>": append that line to $STUB_BOARD, like a lane posting DONE.
+sid=""; prompt=""; export_f=""; model=""; perm=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p) prompt=$2; shift 2;;
+    -r) sid=$2; shift 2;;
+    --export) export_f=$2; shift 2;;
+    --model) model=$2; shift 2;;
+    --permission-mode) perm=$2; shift 2;;
+    *) shift;;
+  esac
+done
+n=$(cat "$STUB_OUT/count" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STUB_OUT/count"
+printf 'call=%s resume=%s model=%s perm=%s\n' "$n" "${sid:-no}" "$model" "$perm" >> "$STUB_OUT/args.log"
+printf '=== call %s ===\n%s\n' "$n" "$prompt" >> "$STUB_OUT/prompts.log"
+[ -n "${STUB_APPEND_BOARD:-}" ] && echo "$STUB_APPEND_BOARD" >> "$STUB_BOARD"
+[ -n "$export_f" ] && printf '{"session_id":"%s"}\n' "${sid:-stub-session-$n}" > "$export_f"
+exit "${STUB_EXIT:-0}"

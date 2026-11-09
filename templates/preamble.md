@@ -30,7 +30,7 @@ BEFORE you post DONE, audit your own work (the orchestrator will check all of th
 - Say plainly what you did NOT verify or assumed. Never write "should work".
 
 Finish by appending to {{CREW}}/BOARD.md (append only, `>>`):
-`DONE {{LANE}}: files changed: ... | verified: <command> -> <result> | open issues for other lanes: ...`
+`DONE {{LANE}}: files changed: ... | verified: <command> -> <result> | contracts: v<the CONTRACTS.md version you last read> | open issues for other lanes: ...`
 Your final message repeats that in at most 15 lines.
 If you cannot continue without an answer, mail it to the orchestrator and end your final message with `BLOCKED: <one question>`.
 

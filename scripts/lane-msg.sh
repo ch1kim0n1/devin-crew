@@ -21,14 +21,14 @@ case "$cmd" in
     lane=$1; f="$inbox/$lane.md"; cur="$inbox/$lane.cursor"
     total=$( (wc -l < "$f") 2>/dev/null || echo 0); total=${total//[[:space:]]/}
     seen=$(cat "$cur" 2>/dev/null || echo 0)
-    if [ "$total" -gt "$seen" ]; then tail -n +"$((seen + 1))" "$f"; else echo "(no new mail)"; fi
+    if [ "$total" -gt "$seen" ]; then sed -n "$((seen + 1)),${total}p" "$f"; else echo "(no new mail)"; fi
     echo "$total" > "$cur"
     ;;
   pending)
     for f in "$inbox"/*.md; do
       [ -e "$f" ] || continue
       lane=$(basename "$f" .md)
-      total=$(wc -l < "$f"); total=${total//[[:space:]]/}
+      total=$(wc -l < "$f"); total=${total//[[:space:]]/}  # unread = lines past cursor
       seen=$(cat "$inbox/$lane.cursor" 2>/dev/null || echo 0)
       [ "$total" -gt "$seen" ] && echo "$lane $(cat "$crew/lanes/$lane.status" 2>/dev/null || echo not-started) $((total - seen))"
     done

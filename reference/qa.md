@@ -9,7 +9,7 @@ Run after **every lane of a milestone has exited** (not while any is `running`),
 ## Checklist (write results to `.devin-crew/QA.md`, one section per milestone)
 
 1. **Lanes finished clean**: `crew-status.sh` shows no `failed`, no `running-but-NO-PROCESS`; unread mail is empty (`lane-msg.sh pending`).
-2. **Acceptance**: rerun every task's acceptance command yourself, in the main tree (worktree mode: after `merge`). Record command and exit code.
+2. **Acceptance**: `bash S/crew-verify.sh <project>` reruns every TASKS.md acceptance command for finished lanes in the main tree (worktree mode: after `merge`) and checks that each lane's DONE line says `contracts: v<current>`. `FAIL`, `TIMEOUT` and `STALE-CONTRACT` lines are failures (a stale lane coded against an old contract: resume it with the new one). Record command and exit code. `bash S/crew-report.sh <project>` shows nudges, hung-tool kills and elapsed time per lane: scrutinize lanes that needed rescue.
 3. **Scope**: `crew-guard.sh check` clean; nothing left behind by `merge`.
 4. **No regressions**: `crew-guard.sh regress` against the baseline. New failing output is a FAIL unless it is expected by the milestone.
 5. **Read the diff.** `git diff` / `git status` of the main tree: does the change do what the objective and the milestone say, nothing extra, no debug leftovers, no secrets, no stray files? Spot-check against CONTRACTS.md.

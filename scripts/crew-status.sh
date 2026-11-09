@@ -10,7 +10,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 count() { grep -ciE "\|[[:space:]]*$1[[:space:]]*\|?[[:space:]]*$" "$crew/TASKS.md" 2>/dev/null || true; }
 if [ -f "$crew/TASKS.md" ]; then
-  echo "tasks: open=$(count open) running=$(count running) done=$(count done) failed=$(count failed)"
+  echo "tasks: open=$(count open) running=$(count running) done=$(count "done") failed=$(count failed)"
 else echo "tasks: no TASKS.md"; fi
 [ -f "$crew/LOCK" ] && echo "lock: held $(( $(date +%s) - $(head -1 "$crew/LOCK") ))s ago"
 [ -f "$crew/baseline.cmd" ] && echo "baseline: exit $(cat "$crew/baseline.exit") for: $(cat "$crew/baseline.cmd")"

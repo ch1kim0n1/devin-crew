@@ -18,7 +18,9 @@ now=$(date +%s)
 q() { sqlite3 -readonly "$DB" "$1" 2>/dev/null; }
 esc() { printf '%s' "${1//\'/\'\'}"; }
 ago() { local s=$1; [ "$s" -lt 0 ] && s=0; if [ "$s" -ge 3600 ]; then echo "$((s/3600))h$((s%3600/60))m"; elif [ "$s" -ge 60 ]; then echo "$((s/60))m$((s%60))s"; else echo "${s}s"; fi; }
-hms() { date -r "$1" '+%H:%M:%S' 2>/dev/null || echo "?"; }
+hms() { date -r "$1" '+%H:%M:%S' 2>/dev/null || date -d "@$1" '+%H:%M:%S' 2>/dev/null || echo "?"; }   # BSD, then GNU
+if stat -c %Y / >/dev/null 2>&1; then mtimes() { xargs -0 stat -c %Y 2>/dev/null; }   # GNU
+else mtimes() { xargs -0 stat -f %m 2>/dev/null; }; fi                                   # BSD/macOS
 descendants() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do echo "$c"; descendants "$c"; done; }
 
 if [ "${2:-}" = "--timeline" ]; then cat "$crew/events.log" 2>/dev/null || echo "(no events yet)"; exit 0; fi
@@ -69,9 +71,9 @@ esac; }
 
 diagnose() { # lane [mode]
   local lane=$1 mode=${2:-full}
-  local status spid dpid acp sid wd up started
+  local status dpid acp sid wd started
   status=$(cat "$crew/lanes/$lane.status" 2>/dev/null || echo not-started)
-  spid=$(cat "$crew/lanes/$lane.pid" 2>/dev/null); dpid=$(cat "$crew/lanes/$lane.devinpid" 2>/dev/null)
+  dpid=$(cat "$crew/lanes/$lane.devinpid" 2>/dev/null)
   started=$(cat "$crew/lanes/$lane.started" 2>/dev/null || echo "$now")
   wd=$proj; [ -f "$crew/lanes/$lane.workdir" ] && wd=$(cat "$crew/lanes/$lane.workdir")
   sid=$(lane_sid "$lane")
@@ -101,7 +103,7 @@ diagnose() { # lane [mode]
   subst="json_extract(chat_message,'\$.role')='tool' or (json_extract(chat_message,'\$.role')='assistant' and (ifnull(length(json_extract(chat_message,'\$.content')),0)>0 or ifnull(json_array_length(json_extract(chat_message,'\$.tool_calls')),0)>0))"
   prog=$(q "select ifnull(max(created_at),0) from message_nodes where session_id='$(esc "$sid")' and ($subst)")
   trail=$(q "select count(*) from message_nodes where session_id='$(esc "$sid")' and json_extract(chat_message,'\$.role')='assistant' and ifnull(length(json_extract(chat_message,'\$.content')),0)=0 and ifnull(json_array_length(json_extract(chat_message,'\$.tool_calls')),0)=0 and node_id > (select ifnull(max(node_id),0) from message_nodes where session_id='$(esc "$sid")' and ($subst))")
-  fsm=$(find "$wd" \( -name .git -o -name node_modules -o -name .devin-crew \) -prune -o -type f -print0 2>/dev/null | xargs -0 stat -f %m 2>/dev/null | sort -n | tail -1)
+  fsm=$(find "$wd" \( -name .git -o -name node_modules -o -name .devin-crew \) -prune -o -type f -print0 2>/dev/null | mtimes | sort -n | tail -1)
   local last=${prog:-0}; [ "${fsm:-0}" -gt "$last" ] && [ "${fsm:-0}" -ge "$started" ] && last=$fsm
   [ "$last" -eq 0 ] && last=$started
   local idle=$((now - last))
