@@ -1,0 +1,1 @@
+ROLE: refactor. Behavior must not change. Run the project's tests before your first edit and after your last; both runs must match. Make one kind of change at a time (rename, extract, move) and stay inside your scope.

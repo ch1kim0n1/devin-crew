@@ -1,0 +1,75 @@
+# devin-crew
+
+A [Claude Code](https://claude.com/claude-code) skill that turns Claude into the **control panel for a crew of headless [Devin CLI](https://devin.ai) agents** working on one project.
+
+```
+   YOU            decide: the plan, the scope, how many workers, every change to them
+    |
+  CLAUDE          the brain and messenger: studies the project, proposes a breakdown,
+    |             briefs the workers, routes their mail, watches them, QAs their work
+ DEVIN, DEVIN…    workers: take tasks from Claude, nothing else
+```
+
+You give a goal. Claude reads the project, proposes milestones and **how many Devins to deploy and why**, and waits for your go. Only then do workers start. Claude watches them (and recovers from hangs), merges their work, and runs a production QA checklist on every milestone before it tells you anything is done.
+
+## What it does
+
+- **Recon, proposal, plan with you.** Read-only study of the project first; nothing launches before you say go (unless you explicitly set autonomy to `auto`).
+- **Lanes that know about each other.** Every Devin is told it is one of several working at once. They share a roster (who owns which files), versioned contracts (shared interfaces) and per-lane mail. Claude wakes idle lanes when mail arrives.
+- **Isolation.** Git repo: one detached worktree per lane, merged back as uncommitted edits, in-scope files only. Otherwise a shared tree with a pre-launch snapshot and a scope check.
+- **Observability.** `devin -p` prints almost nothing while it works, so a hung lane looks like a busy one. A watchdog reads Devin's own session store, process tree and logs; kills hung commands; nudges lanes stuck in empty-reply loops; classifies errors (auth, quota, network, trust, context…); keeps an event log.
+- **Production QA.** Devins are fast and miss details and big ideas. A mechanical net (`crew-qa.sh`) plus a manual checklist (requirement matrix, mutation spot-check of tests, edge and error paths, security, docs, end-to-end run, independent reviewer lane) gates every milestone.
+
+## Requirements
+
+- Claude Code
+- [Devin CLI](https://devin.ai) installed and logged in (`devin auth login`), the project folder trusted once (`devin` in it)
+- `bash`, `git`, `python3`, `sqlite3`, `tar` (developed on macOS; Linux untested, `stat -f` and `date -r` calls are macOS forms)
+
+## Install
+
+```bash
+git clone https://github.com/ch1kim0n1/devin-crew ~/.claude/skills/devin-crew
+```
+
+Restart Claude Code (or start a new session).
+
+## Use
+
+| You type | What happens |
+|---|---|
+| `/devin-crew` | Heads-up only. Claude acknowledges the mode and asks for your goal. Runs nothing. |
+| `/devin-crew <goal>` | Recon, proposal, plan with you, then execution and QA |
+| `/devin-crew status` | Live state of each lane |
+| `/devin-crew resume` | Pick up a half-done crew from `.devin-crew/` |
+
+To let Claude skip the wait for your go: tell it to decide on its own (it writes `AUTONOMY=auto`). It still does recon, shows the plan, and does QA.
+
+## Settings baked in (edit the scripts to change them)
+
+- Every lane runs `swe-2-flash-high` (`scripts/devin-lane.sh` coerces any other model).
+- Every lane runs in Devin's **bypass mode** (`--permission-mode dangerous`): all tool approvals off. The only guardrails are file scopes, the lane preamble, the snapshot/worktree and the checks. Read `SKILL.md` before running this on anything you cannot afford to lose.
+- Lanes never commit or push. Claude commits only when asked and never pushes without an OK.
+
+## Layout
+
+```
+SKILL.md                    the skill (flow, rules)
+reference/                  recon & plan, setup files, mail & router, guardrails, observability, QA + checklist
+scripts/devin-lane.sh       run/resume one lane with watchdog and auto-nudge
+scripts/crew-worktree.sh    worktree add / merge / remove
+scripts/crew-guard.sh       lock, baseline/regress, snapshot, scope check, restore
+scripts/crew-observe.sh     what is a lane really doing; why did it fail
+scripts/crew-qa.sh          mechanical QA over the diff
+scripts/crew-status.sh      one-screen status
+scripts/lane-msg.sh         mail between lanes
+templates/                  lane preamble and role presets
+```
+
+## Status
+
+Early. The pieces were tested on small scratch projects with real Devin lanes (parallel lanes, mail, worktrees, merge, hung-command recovery, a real stall recovered by nudge), not on large codebases. Expect rough edges and open an issue.
+
+## License
+
+MIT
