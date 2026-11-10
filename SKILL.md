@@ -18,7 +18,7 @@ Scripts live in `~/.claude/skills/devin-crew/scripts/` (`S` below). Devin headle
 
 ## Fixed settings (user's standing rules, 2026-11-09)
 
-Every lane runs `swe-2-flash-high` (script coerces anything else): free, weaker than frontier, so keep scopes tight, contracts explicit, verify everything yourself. Every lane runs in bypass mode (`--permission-mode dangerous`): nothing gates its tools, so scopes, preamble and guards are the only safety. Lanes never commit or push.
+Every lane runs `swe-2-flash-high` (script coerces anything else): free, weaker than frontier, so keep scopes tight, contracts explicit, verify everything yourself. Every lane runs in bypass mode (`--permission-mode dangerous`): nothing gates its tools, so scopes, preamble and guards are the only safety. Lanes never commit or push unless the user told you to (see Rules).
 
 ## Phases
 
@@ -39,7 +39,7 @@ A decision is theirs (product direction, scope, number of workers), an action is
 
 ## Rules
 
-- You commit only when the user asks; push never without an OK. Worktree merges leave uncommitted edits.
+- Git is the user's call. Default: nobody commits or pushes; worktree merges leave uncommitted edits. The user's instruction in chat ("have them commit", "commit and push to origin main") is the authorization: then launch with `CREW_GIT=commit` (lanes commit their own scoped files after verifying) or `CREW_GIT=push CREW_GIT_TARGET="<remote> <branch>"` (they also push there; the user must have named remote and branch). First launch only; shared-tree mode only, since a worktree lane's commits would hide its changes from `merge`. In worktree mode you commit after `merge` and QA, and push only if told. Never force-push; no instruction to commit means none to push. Ask in the proposal whether lanes should commit/push, default no.
 - Lane names are short and stable. Never resume a `running` lane. Never start a second Devin on the same files.
 - Summarize, never paste raw Devin logs. Keep `.devin-crew/` after the run; delete only on the user's word.
 

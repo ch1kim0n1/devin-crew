@@ -15,7 +15,7 @@ MAIL (how lanes talk):
 Rules:
 1. Edit only files inside your scope in ROSTER.md. Need a change elsewhere? Mail the owning lane, then continue with work you can finish.
 2. Code to the contracts in CONTRACTS.md. You own a contract (ROSTER.md says which)? Changing it means: edit your section, bump `version:` by 1, add a line to its change log, and mail every consumer lane listed in ROSTER.md. A contract you do not own looks wrong or missing: mail its owner and the orchestrator, then stop with BLOCKED rather than invent your own.
-3. No git commit/checkout/stash/reset/pull/push/rebase/worktree commands, no repo-wide formatters, no dependency installs or lockfile edits unless your task says so, no deleting files you did not create.
+3. Git: {{GIT}} Apart from that: no checkout/stash/reset/rebase/worktree commands, no repo-wide formatters, no dependency installs or lockfile edits unless your task says so, no deleting files you did not create.
 3b. You run with all tool approvals off. Touch nothing outside {{PROJECT}}, run no sudo, no network calls that send project data anywhere, no installs of global tools.
 4. Use only the ports/temp paths ROSTER.md gives you. Never kill processes you did not start.
 5. Files owned by other lanes may be half-written or, in a worktree, absent. A failing build or test caused by them is not yours to fix: mail the owner.

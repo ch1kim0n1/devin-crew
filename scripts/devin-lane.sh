@@ -4,6 +4,8 @@
 #   model "-"      reuse the model this lane was first launched with (always swe-2-flash-high)
 #   task_file "-"  wake-up: the lane only gets "you have new mail"
 # env: CREW_ROLE=<name>        first launch only: append templates/roles/<name>.md to the preamble
+#      CREW_GIT=commit|push    first launch only, ONLY when the user told the orchestrator to: lane may commit (push needs
+#                              CREW_GIT_TARGET="<remote> <branch>"). Shared-tree mode only; default none.
 #      CREW_MAX_SECS=2700      wall-clock cap per turn, nudges included (status failed(timeout))
 #      CREW_STALL_RETRIES=2    automatic kill+nudge attempts when the lane stalls (see crew-observe.sh)
 # First call for a lane starts a new Devin session; later calls resume it, unread mail prepended.
@@ -43,6 +45,24 @@ else
   t=$(cat "$skill_dir/templates/preamble.md")
   t=${t//\{\{LANE\}\}/$lane}; t=${t//\{\{PROJECT\}\}/$proj}; t=${t//\{\{WORKDIR\}\}/$workdir}
   t=${t//\{\{CREW\}\}/$crew}; t=${t//\{\{SKILLDIR\}\}/$skill_dir}
+  # Git rights are opt-in, granted only when the user told the orchestrator to (CREW_GIT=commit|push, first launch only).
+  gitmode=${CREW_GIT:-none}; target=${CREW_GIT_TARGET:-}
+  if [ "$gitmode" != none ] && ! git -C "$proj" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "CREW_GIT ignored: $proj is not a git repo" >&2; gitmode=none; fi
+  if [ "$gitmode" != none ] && [ "$workdir" != "$proj" ]; then
+    echo "CREW_GIT ignored: lane runs in a worktree (its commits would hide its changes from merge and never reach the repo); the orchestrator commits after merge" >&2; gitmode=none; fi
+  if [ "$gitmode" = push ] && ! printf '%s' "$target" | grep -Eq '^[A-Za-z0-9._/-]+ [A-Za-z0-9._/-]+$'; then
+    echo "CREW_GIT=push needs CREW_GIT_TARGET=\"<remote> <branch>\"; falling back to commit only" >&2; gitmode=commit; fi
+  case "$gitmode" in
+    commit|push)
+      g="You MAY commit your own work, nothing else. Stage explicit paths inside your owned scope (git add -- <paths>; never git add -A or git add .), commit with a message starting [crew:$lane], and only after your verify command passes. Another lane may hold .git/index.lock: wait 5 seconds and retry up to 6 times, never delete it. Never amend, rebase, reset, stash, checkout or force anything."
+      if [ "$gitmode" = push ]; then
+        g="$g After your last commit push once with: git push $target. If rejected as non-fast-forward, run git pull --rebase $target once, rerun your verify command, and push again; on any conflict or a second rejection stop and post BLOCKED. Never force-push and never push to any other remote or branch."
+      else g="$g Do not push."; fi;;
+    *) g="you may not run any git write command (no commit, push, pull, add). The orchestrator handles version control." ;;
+  esac
+  ev "git rights: $gitmode${target:+ ($target)}"
+  t=${t//\{\{GIT\}\}/$g}
   role=""; [ -n "${CREW_ROLE:-}" ] && [ -f "$skill_dir/templates/roles/$CREW_ROLE.md" ] && role=$(cat "$skill_dir/templates/roles/$CREW_ROLE.md")
   prompt=$(printf '%s\n\n%s\n\n%s' "$t" "$role" "$body")
   ev "launch ${CREW_ROLE:-no-role} in $workdir"

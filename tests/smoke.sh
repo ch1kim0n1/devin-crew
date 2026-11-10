@@ -43,6 +43,25 @@ STUB_EXIT=3 bash "$S/devin-lane.sh" "$proj" bad2 - "$work/task.md" >/dev/null 2>
 ok "nonzero exit -> failed(n)" '[ "$(cat $crew/lanes/bad2.status)" = "failed(3)" ]'
 ok "events log has elapsed" 'grep -q "exit status=done session=stub-session-1 elapsed=[0-9]* nudges=0" $crew/events.log'
 
+echo "--- git rights"
+gproj="$work/gproj"; mkdir -p "$gproj"; git -C "$gproj" init -q
+last_prompt() { awk '/^=== call/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$STUB_OUT/prompts.log"; }
+bash "$S/devin-lane.sh" "$gproj" g0 - "$work/task.md" >/dev/null 2>&1
+ok "default: no git writes" 'last_prompt | grep -q "may not run any git write command"'
+CREW_GIT=commit bash "$S/devin-lane.sh" "$gproj" g1 - "$work/task.md" >/dev/null 2>&1
+ok "commit: scoped add, no push" 'last_prompt | grep -q "You MAY commit" && last_prompt | grep -q "Do not push" && last_prompt | grep -q "\[crew:g1\]"'
+CREW_GIT=push CREW_GIT_TARGET="origin main" bash "$S/devin-lane.sh" "$gproj" g2 - "$work/task.md" >/dev/null 2>&1
+ok "push: exact target, never force" 'last_prompt | grep -q "git push origin main" && last_prompt | grep -q "Never force-push"'
+CREW_GIT=push bash "$S/devin-lane.sh" "$gproj" g3 - "$work/task.md" >/dev/null 2>&1
+ok "push without target falls back to commit" 'last_prompt | grep -q "Do not push"'
+CREW_GIT=push CREW_GIT_TARGET="origin main; rm -rf /" bash "$S/devin-lane.sh" "$gproj" g4 - "$work/task.md" >/dev/null 2>&1
+ok "injected target rejected" '! last_prompt | grep -q "rm -rf" && last_prompt | grep -q "Do not push"'
+CREW_GIT=commit bash "$S/devin-lane.sh" "$proj" g5 - "$work/task.md" >/dev/null 2>&1
+ok "non-git project: no git rights" 'last_prompt | grep -q "may not run any git write command"'
+mkdir -p "$gproj/.devin-crew/lanes"; echo "$work/proj" > "$gproj/.devin-crew/lanes/g6.workdir"
+CREW_GIT=commit bash "$S/devin-lane.sh" "$gproj" g6 - "$work/task.md" >/dev/null 2>&1
+ok "worktree lane: git rights refused" 'last_prompt | grep -q "may not run any git write command"'
+
 echo "--- router"
 bash "$S/lane-msg.sh" "$proj" send tests api "wake me" >/dev/null
 r=$(CREW_ROUTER_MAX_SECS=60 bash "$S/crew-router.sh" "$proj" 1)
