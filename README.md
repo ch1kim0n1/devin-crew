@@ -49,7 +49,8 @@ To let Claude skip the wait for your go: tell it to decide on its own (it writes
 
 - Every lane runs `swe-2-flash-high` (`scripts/devin-lane.sh` coerces any other model).
 - Every lane runs in Devin's **bypass mode** (`--permission-mode dangerous`): all tool approvals off. The only guardrails are file scopes, the lane preamble, the snapshot/worktree and the checks. Read `SKILL.md` before running this on anything you cannot afford to lose.
-- Lanes never commit or push by default. If you tell Claude to ("have them commit", "commit and push to origin main"), it launches them with `CREW_GIT=commit` or `CREW_GIT=push CREW_GIT_TARGET="origin main"`: each lane stages only its own scoped files, commits after its verify passes, and pushes with a plain `git push` (never forced; one rebase retry, then BLOCKED). Shared-tree mode only; with worktrees Claude commits after merge instead.
+- Verification is local: Claude trusts what it ran itself (acceptance commands, project tests, QA checklist) and never waits on GitHub CI.
+- Lanes never commit or push by default. If you tell Claude to ("have them commit", "commit and push to origin main"), it launches them with `CREW_GIT=commit` or `CREW_GIT=push CREW_GIT_TARGET="origin main"`: each lane stages only its own scoped files, commits after its verify passes, and pushes with a plain `git push` (never forced; one rebase retry, then BLOCKED). Lanes commit per verified unit of work, not one giant commit and not per tiny edit. Shared-tree mode only; with worktrees Claude commits after merge instead. A standing "commit and push regularly" instruction counts as the go-ahead.
 
 ## Layout
 
