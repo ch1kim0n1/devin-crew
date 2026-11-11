@@ -69,6 +69,8 @@ scripts/crew-router.sh      wake lanes that get mail; exits when the crew is qui
 scripts/crew-resume.sh      rebuild a run from files (plan, state, next steps) after a reset
 scripts/crew-tasks.sh       keep TASKS.md statuses true (set, lane, next)
 scripts/crew-report.sh      per-lane nudges, kills, elapsed time
+scripts/crew-ledger.sh      appends lane turns and QA findings to the cross-project usage ledger (local, git-ignored)
+scripts/crew-analytics.sh   usage, time, tasks, projects, tokens, QA and fun facts across projects; `viz` writes an HTML report
 scripts/crew-budget.sh      lane-minutes cap; launches refused when exceeded
 scripts/crew-doctor.sh      preflight: login, model, tools, git state, workspace trust
 scripts/crew-status.sh      one-screen status
@@ -79,7 +81,7 @@ tests/smoke.sh              offline regression test (fake devin, shellcheck), `b
 
 ## Status
 
-Tested offline (`bash tests/smoke.sh`, 96 checks with a fake `devin`) and in real runs with real Devin lanes: a 3-lane trial and a 5-lane run with a mid-run contract change, hung-command recovery, a read-only reviewer and a mutation check (`tests/e2e-log.md`). Claude's own gate and QA discipline is checked with fresh-model pressure scenarios (`tests/pressure-scenarios.md`) and the description with a trigger check (`tests/trigger-prompts.md`). Not yet exercised: Linux, large codebases (thousands of files), shared-tree mode with 5 lanes. Expect rough edges and open an issue.
+Tested offline (`bash tests/smoke.sh`, 103 checks with a fake `devin`) and in real runs with real Devin lanes: a 3-lane trial and a 5-lane run with a mid-run contract change, hung-command recovery, a read-only reviewer and a mutation check (`tests/e2e-log.md`). Claude's own gate and QA discipline is checked with fresh-model pressure scenarios (`tests/pressure-scenarios.md`) and the description with a trigger check (`tests/trigger-prompts.md`). Not yet exercised: Linux, large codebases (thousands of files), shared-tree mode with 5 lanes. Expect rough edges and open an issue.
 
 ## License
 

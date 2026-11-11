@@ -7,6 +7,12 @@ work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 proj="$work/proj"; mkdir -p "$proj/.devin-crew" "$work/out"
 export STUB_OUT="$work/out" STUB_BOARD="$proj/.devin-crew/BOARD.md" PATH="$here/stub:$PATH"
 crew="$proj/.devin-crew"
+export CREW_LEDGER="$work/ledger.tsv" DEVIN_SESSIONS_DB="$work/sessions.db"   # never touch the real ledger or Devin's store
+sqlite3 "$DEVIN_SESSIONS_DB" "create table sessions(id text, metadata text); create table message_nodes(session_id text, node_id int, chat_message text, metadata text); create table tool_call_state(session_id text);
+insert into sessions values('stub-session-1','{\"total_acu_cost\":0.5}');
+insert into message_nodes values('stub-session-1',1,'{\"role\":\"assistant\",\"content\":\"aaaaaaaaaaaaaaaaaaaa\"}','{\"num_tokens_preceding\":1000}');
+insert into message_nodes values('stub-session-1',2,'{\"role\":\"assistant\",\"content\":\"bbbbbbbbbbbbbbbbbbbb\"}','{\"num_tokens_preceding\":3000}');
+insert into tool_call_state values('stub-session-1'); insert into tool_call_state values('stub-session-1');"
 pass=0; fail=0
 ok() { if eval "$2"; then pass=$((pass + 1)); echo "ok   $1"; else fail=$((fail + 1)); echo "FAIL $1   [$2]"; fi; }
 
@@ -62,6 +68,19 @@ STUB_EXIT=3 bash "$S/devin-lane.sh" "$proj" ex - "$work/task.md" >/dev/null 2>&1
 ok "unexplained nonzero exit also goes to the user" '[ "$(head -1 $crew/lanes/ex.needs-user)" = "EXIT-3" ]'
 STUB_EXIT=1 STUB_OUTPUT="prompt is too long for the context window" bash "$S/devin-lane.sh" "$proj" ctx - "$work/task.md" >/dev/null 2>&1
 ok "context-too-long stays with the orchestrator" '[ ! -f $crew/lanes/ctx.needs-user ] && [ "$(cat $crew/lanes/ctx.status)" = "failed(1)" ]'
+
+echo "--- usage ledger and analytics"
+led() { awk -F'\t' "$1 {f=1} END{exit !f}" "$CREW_LEDGER"; }
+ok "ledger gets a turn row with tokens" 'led "\$1==\"turn\" && \$4==\"api\" && \$5==\"done\" && \$10==3000 && \$11==4000 && \$12==10 && \$13==2 && \$14==2 && \$15==0.5"'
+ok "limit stop is in the ledger with its class" 'led "\$1==\"turn\" && \$4==\"lim\" && \$5==\"failed(1)\" && \$9==\"RATE_OR_QUOTA\""'
+bash "$S/crew-qa-history.sh" "$proj" add m1 api stub HIGH "x" >/dev/null
+ok "qa finding reaches the ledger" 'led "\$1==\"qa\" && \$4==\"api\" && \$5==\"stub\" && \$6==\"HIGH\""'
+a=$(bash "$S/crew-analytics.sh")
+ok "text summary has usage, tokens, tasks, projects, fun" 'printf "%s" "$a" | grep -q "lane turns" && printf "%s" "$a" | grep -q "tokens:" && printf "%s" "$a" | grep -q "tasks:" && printf "%s" "$a" | grep -q "projects:" && printf "%s" "$a" | grep -q "Marathoner"'
+ok "tokens counted once per session, not per turn" 'printf "%s" "$a" | grep -Eq "~4k input"'
+v=$(bash "$S/crew-analytics.sh" viz "$work/report.html")
+ok "viz writes a self-contained html" 'printf "%s" "$v" | grep -q "^report: " && grep -q "<svg" $work/report.html && ! grep -Eq "src=.http|href=.http" $work/report.html'
+ok "empty ledger is handled" 'CREW_LEDGER=$work/none.tsv bash $S/crew-analytics.sh | grep -q "^no usage recorded yet"'
 
 echo "--- doctor"
 d=$(bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?

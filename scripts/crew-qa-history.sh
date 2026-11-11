@@ -31,6 +31,7 @@ case "$cmd" in
     case "$classes" in *" $cls "*) ;; *) echo "unknown class '$cls'; use:$classes" >&2; exit 2;; esac
     case "$sev" in HIGH|MED|LOW) ;; *) echo "severity must be HIGH, MED or LOW" >&2; exit 2;; esac
     mkdir -p "$crew"; printf '%s\t%s\t%s\t%s\t%s\n' "$m" "$lane" "$cls" "$sev" "$text" >> "$h"
+    bash "$(dirname "$0")/crew-ledger.sh" qa "$proj" "$lane" "$cls" "$sev"
     echo "recorded: $m $lane $cls $sev";;
   show)
     if [ ! -s "$h" ]; then echo "QA history: no findings recorded yet"

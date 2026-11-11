@@ -188,5 +188,7 @@ if [ "$st" != "done" ]; then
     echo "ORCHESTRATOR: stop and tell the user now (what failed, the evidence, their fix). They either fix it and say retry, or say retry. Do not relaunch this lane until then; after their word run it with CREW_RETRY_OK=1."
   fi
 fi
+rs=0; case "$mode" in resume*) rs=1;; esac
+bash "$skill_dir/scripts/crew-ledger.sh" turn "$proj" "$lane" "$st" "$(( $(date +%s) - t0 ))" "$attempt" "$rs" "${cls:--}" "${sid:-}"
 if [ "$st" = "done" ]; then exit 0; fi
 exit "${code:-1}"
