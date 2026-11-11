@@ -57,7 +57,7 @@ To let Claude skip the wait for your go: tell it to decide on its own (it writes
 
 ```
 SKILL.md                    the skill (flow, rules)
-reference/                  recon & plan, setup files, mail & router, guardrails, observability, QA + checklist
+reference/                  recon & plan, execute, setup files, git rights, mail & router, guardrails, observability, QA + checklist
 scripts/devin-lane.sh       run/resume one lane with watchdog and auto-nudge
 scripts/crew-worktree.sh    worktree add / merge / remove
 scripts/crew-guard.sh       lock, baseline/regress, snapshot, scope check, restore
