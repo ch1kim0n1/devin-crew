@@ -65,6 +65,7 @@ scripts/crew-qa.sh          mechanical QA over the diff
 scripts/crew-verify.sh      run TASKS.md acceptance commands, check contract freshness
 scripts/crew-router.sh      wake lanes that get mail; exits when the crew is quiet
 scripts/crew-report.sh      per-lane nudges, kills, elapsed time
+scripts/crew-doctor.sh      preflight: login, model, tools, git state, workspace trust
 scripts/crew-status.sh      one-screen status
 scripts/lane-msg.sh         mail between lanes
 templates/                  lane preamble and role presets

@@ -43,6 +43,17 @@ STUB_EXIT=3 bash "$S/devin-lane.sh" "$proj" bad2 - "$work/task.md" >/dev/null 2>
 ok "nonzero exit -> failed(n)" '[ "$(cat $crew/lanes/bad2.status)" = "failed(3)" ]'
 ok "events log has elapsed" 'grep -q "exit status=done session=stub-session-1 elapsed=[0-9]* nudges=0" $crew/events.log'
 
+echo "--- doctor"
+d=$(bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
+ok "doctor ready on a healthy setup" '[ "$rc" = 0 ] && printf "%s" "$d" | grep -q "doctor: ready" && printf "%s" "$d" | grep -q "model available: swe-2-flash-high"'
+d=$(STUB_AUTH=out bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
+ok "doctor fails when logged out, with fix" '[ "$rc" = 1 ] && printf "%s" "$d" | grep -q "FAIL devin not logged in.*devin auth login"'
+d=$(STUB_NO_MODEL=1 bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
+ok "doctor fails when model missing" '[ "$rc" = 1 ] && printf "%s" "$d" | grep -q "FAIL model swe-2-flash-high"'
+d=$(bash "$S/crew-doctor.sh" "$work/nope" 2>&1); rc=$?
+ok "doctor fails on missing folder" '[ "$rc" = 1 ]'
+ok "doctor flags non-git project" 'bash "$S/crew-doctor.sh" "$proj" 2>&1 | grep -q "WARN not a git repo"'
+
 echo "--- git rights"
 gproj="$work/gproj"; mkdir -p "$gproj"; git -C "$gproj" init -q
 last_prompt() { awk '/^=== call/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$STUB_OUT/prompts.log"; }
