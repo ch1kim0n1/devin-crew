@@ -1,0 +1,6 @@
+RATE_OR_QUOTA	Error: Agent error: Reached request rate limit. Please switch to a different model or contact support. Your limit will reset in 11 seconds (at 00:53 UTC).: {
+RATE_OR_QUOTA	{"error":{"code":-32011,"message":"Quota exhausted.","data":{"cognition.ai/errorKind":"resource_exhausted","cognition.ai/retryable":true}}}
+RATE_OR_QUOTA	You've reached your ChatGPT subscription usage limit. Resume this session once your limit resets, or turn off ChatGPT token sharing in settings to continue on Devin usage.
+AUTH	Not authenticated. Log in to manage provider billing.
+AUTH	run auth login first
+TRUST	untrusted workspace: run devin in this folder and accept

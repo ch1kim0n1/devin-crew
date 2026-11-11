@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # How Claude has used Devin across all projects, from the usage ledger (written by devin-lane.sh and crew-qa-history.sh).
 #   bash crew-analytics.sh            text summary: usage, time, tasks, projects, tokens, failures, QA, fun facts
+#   bash crew-analytics.sh hint       3-4 lines on earlier crews (cost, first-try rate, stops, QA) for the proposal; silent when no history
 #   bash crew-analytics.sh viz [out]  also write a self-contained HTML report with charts (default usage/report.html); prints the path
 # Ledger: $CREW_LEDGER or <skill>/usage/ledger.tsv. Local only (git-ignored). Run only when the user asks.
 # Tokens are estimates from Devin's session store: "input" = sum of the context size at each model call, before caching, so far above what is billed, "written" = assistant chars/4.
@@ -8,7 +9,7 @@ set -u
 here="$(cd "$(dirname "$0")/.." && pwd)"
 L=${CREW_LEDGER:-$here/usage/ledger.tsv}
 mode=${1:-text}; out=${2:-$here/usage/report.html}
-[ -s "$L" ] || { echo "no usage recorded yet ($L): it fills as crews run"; exit 0; }
+[ -s "$L" ] || { [ "$mode" = hint ] || echo "no usage recorded yet ($L): it fills as crews run"; exit 0; }
 exec python3 -I - "$L" "$mode" "$out" <<'PY'
 import sys, os, html, datetime as dt
 from collections import defaultdict, Counter
@@ -68,6 +69,17 @@ streak = best = 0
 for t in sorted(T, key=lambda t: t["ts"]):
     streak = streak + 1 if t["st"] == "done" else 0; best = max(best, streak)
 fun.append(("Clean streak", f"{best} lane turns in a row ended done"))
+
+if mode == "hint":   # a few lines for the proposal: what earlier crews cost and where they struggled
+    import statistics as st
+    crews = list(byproj.values())
+    mm = st.median(c["mins"] for c in crews); ml = st.median(len(c["lanes"]) for c in crews)
+    rough = sum(1 for t in T if t["nud"] or "stalled" in t["st"] or "timeout" in t["st"])
+    print(f"history: {len(crews)} earlier crew(s), median {mm:.0f} lane-minutes and {ml:.0f} lane(s) each, biggest {max(c['mins'] for c in crews):.0f} min.")
+    print(f"first-try rate: {100*ok/len(T):.0f}% of lane turns ended done; {rough} of {len(T)} needed a nudge or hit a stall/timeout.")
+    if needs: print("Devin stopped for the user before: " + ", ".join(f"{a} {b}x" for a, b in needs.most_common(3)) + ".")
+    if qac: print("QA found most often: " + ", ".join(f"{a} {b}x" for a, b in qac.most_common(3)) + ".")
+    sys.exit(0)
 
 # ---- text
 print(f"DEVIN CREW USAGE   {len(byproj)} project(s), {len(lastlane)} lane(s), {len(T)} lane turns")

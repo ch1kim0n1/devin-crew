@@ -82,6 +82,35 @@ v=$(bash "$S/crew-analytics.sh" viz "$work/report.html")
 ok "viz writes a self-contained html" 'printf "%s" "$v" | grep -q "^report: " && grep -q "<svg" $work/report.html && ! grep -Eq "src=.http|href=.http" $work/report.html'
 ok "empty ledger is handled" 'CREW_LEDGER=$work/none.tsv bash $S/crew-analytics.sh | grep -q "^no usage recorded yet"'
 
+echo "--- real Devin error wording (tests/fixtures/real-errors.tsv: lines seen in real Devin logs or its binary)"
+mkdir -p "$crew/logs"
+while IFS=$'\t' read -r want text; do
+  printf '%s\n' "$text" > "$crew/logs/fx.1.log"
+  got=$(bash "$S/crew-observe.sh" "$proj" fx --error | head -1)
+  ok "classified $want: ${text:0:40}" '[ "$got" = "$want" ]'
+done < "$here/fixtures/real-errors.tsv"
+rm -f "$crew/logs/fx.1.log"
+printf 'Error: Agent error: Reached request rate limit. Your limit will reset in 2 minutes (at 00:53 UTC).\n' > "$crew/logs/fx.1.log"
+rs=$(bash "$S/crew-observe.sh" "$proj" fx --reset); nw=$(date +%s)
+ok "reset time parsed from 'reset in 2 minutes'" '[ "$rs" -ge $((nw + 118)) ] && [ "$rs" -le $((nw + 130)) ]'
+printf 'something unrelated\n' > "$crew/logs/fx.1.log"
+ok "no reset time -> empty" '[ -z "$(bash $S/crew-observe.sh $proj fx --reset)" ]'
+rm -f "$crew/logs/fx.1.log"
+
+echo "--- retry at an approved time"
+STUB_EXIT=1 STUB_OUTPUT="Reached request rate limit. Your limit will reset in 2 seconds." bash "$S/devin-lane.sh" "$proj" rt - "$work/task.md" >/dev/null 2>&1
+ok "retry-at refuses a lane that is not waiting" '! bash $S/crew-retry-at.sh $proj api +1 >/dev/null 2>&1'
+c1=$(cat "$STUB_OUT/count")
+( bash "$S/crew-retry-at.sh" "$proj" rt auto >"$work/retry.out" 2>&1 & ); sleep 1
+ok "retry scheduled and visible in status" 'grep -q "scheduled in" $work/retry.out && bash $S/crew-status.sh $proj | grep -q "RETRY-AT="'
+sleep 9
+ok "retry ran after the wait, with approval, resuming the session" '[ "$(cat $STUB_OUT/count)" = "$((c1 + 1))" ] && [ ! -f $crew/lanes/rt.needs-user ] && [ ! -f $crew/lanes/rt.retry-at ] && tail -5 $STUB_OUT/prompts.log | grep -q "cut off by a Devin error"'
+
+echo "--- ledger hint"
+h=$(bash "$S/crew-analytics.sh" hint)
+ok "hint summarizes earlier crews" 'printf "%s" "$h" | grep -q "^history: 1 earlier crew" && printf "%s" "$h" | grep -q "first-try rate"'
+ok "hint is silent without history" '[ -z "$(CREW_LEDGER=$work/none.tsv bash $S/crew-analytics.sh hint)" ]'
+
 echo "--- doctor"
 d=$(bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
 ok "doctor ready on a healthy setup" '[ "$rc" = 0 ] && printf "%s" "$d" | grep -q "doctor: ready" && printf "%s" "$d" | grep -q "model available: swe-2-flash-high"'

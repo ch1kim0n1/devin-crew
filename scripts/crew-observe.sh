@@ -38,8 +38,8 @@ lane_sid() { # lane -> session id (saved, else newest session in the lane's work
 classify_error() { # text file(s) -> CLASS + evidence
   local pat cls f
   for pat in \
-    'AUTH|unauthori[sz]ed|[[:<:]]401[[:>:]]|not logged in|auth login|token (expired|invalid)|invalid.*credential' \
-    'RATE_OR_QUOTA|[[:<:]]429[[:>:]]|rate.?limit|quota|too many requests|billing|credits? (exhausted|required)|usage limit' \
+    'AUTH|unauthori[sz]ed|(^|[^0-9])401([^0-9]|$)|not logged in|not authenticated|auth login|token (expired|invalid)|invalid.*credential' \
+    'RATE_OR_QUOTA|(^|[^0-9])429([^0-9]|$)|rate.?limit|quota|resource_exhausted|too many requests|billing|credits? (exhausted|required)|usage limit' \
     'TRUST|untrusted workspace' \
     'PERMISSION|rejected a tool call|requires confirmation' \
     'CONTEXT_TOO_LONG|context (length|window)|maximum context|too many tokens|prompt is too long' \
@@ -57,7 +57,7 @@ classify_error() { # text file(s) -> CLASS + evidence
 
 ufix() { case "$1" in   # what the USER can do about it (goes into the report Claude gives them)
   AUTH) echo "log in again: devin auth login";;
-  RATE_OR_QUOTA) echo "Devin usage limit or billing: wait for the limit to reset, or add credit / change plan";;
+  RATE_OR_QUOTA) echo "Devin usage limit or billing: wait for the limit to reset (the message often says when), or add credit / change plan; Devin also suggests another model, but the lane model is a fixed rule, so that is your call";;
   TRUST) echo "run devin once in the project folder and accept workspace trust";;
   MODEL) echo "the lane model is unavailable: check devin models; the model is a fixed rule, so tell me if you want it changed";;
   NETWORK) echo "check the network, VPN or proxy";;
@@ -69,6 +69,26 @@ esac; }
 if [ "${3:-}" = "--error" ]; then   # class line + evidence lines for the lane's newest log (empty = no known cause)
   l=$(ls -t "$crew"/logs/"${2:-x}".*.log 2>/dev/null | head -1)
   [ -n "$l" ] && classify_error "$l"
+  exit 0
+fi
+if [ "${3:-}" = "--reset" ]; then   # epoch when a limit resets, parsed from the lane's newest log ("reset in 11 seconds (at 00:53 UTC)"); empty = unknown
+  l=$(ls -t "$crew"/logs/"${2:-x}".*.log 2>/dev/null | head -1)
+  [ -n "$l" ] && python3 -I - "$l" <<'PYEOF'
+import re, sys, os, time, datetime as dt
+txt = open(sys.argv[1], errors="replace").read()[-20000:]; base = os.path.getmtime(sys.argv[1])
+m = re.findall(r"reset(?:s)? in (\d+) ?(second|sec|minute|min|hour|hr|day)", txt, re.I)
+if m:
+    n, u = m[-1]; mult = {"s": 1, "m": 60, "h": 3600, "d": 86400}[u[0].lower()]
+    print(int(base + int(n) * mult + 5)); sys.exit()
+m = re.findall(r"retry.after:? ?(\d+)", txt, re.I)
+if m: print(int(base + int(m[-1]) + 5)); sys.exit()
+m = re.findall(r"\(at (\d\d):(\d\d) UTC\)", txt)
+if m:
+    h, mi = map(int, m[-1]); now = dt.datetime.fromtimestamp(base, dt.timezone.utc)
+    t = now.replace(hour=h, minute=mi, second=0, microsecond=0)
+    if t < now: t += dt.timedelta(days=1)
+    print(int(t.timestamp()) + 5)
+PYEOF
   exit 0
 fi
 if [ "${3:-}" = "--ufix" ]; then ufix "${4:-}"; exit 0; fi
