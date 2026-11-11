@@ -4,10 +4,15 @@
 # 1. Runs each TASKS.md row's acceptance command (column 5) for every lane that is not running.
 #    Row format: | id | lane | scope | depends | acceptance | status |   (acceptance must not contain '|')
 # 2. Contract freshness: a lane's last DONE line must say `contracts: v<N>` with N = current CONTRACTS.md version.
+#    A lane a bump does not affect is cleared with: crew-verify.sh <project> ack-contract <lane>
 # Exit 1 if any acceptance fails/times out or any lane built against a stale contract.
 # env: CREW_VERIFY_SECS=300 per-command timeout
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
+if [ "${2:-}" = "ack-contract" ]; then   # lane's contracts untouched by the latest bump: no need to wake it just to re-sign
+  lane=${3:?usage: ack-contract <lane>}; cur=$(head -1 "$proj/.devin-crew/CONTRACTS.md" | sed 's/[^0-9]//g')
+  mkdir -p "$proj/.devin-crew/lanes"; echo "$cur" > "$proj/.devin-crew/lanes/$lane.contract-ack"; echo "acked: $lane is unaffected by CONTRACTS v$cur"; exit 0
+fi
 only=${2:-}
 crew="$proj/.devin-crew"; secs=${CREW_VERIFY_SECS:-300}
 [ -d "$crew" ] || { echo "no crew in $proj"; exit 0; }
@@ -58,7 +63,9 @@ if [ -f "$crew/CONTRACTS.md" ]; then
     d=$(grep -E "DONE $lane:" "$crew/BOARD.md" 2>/dev/null | tail -1)
     [ -z "$d" ] && continue
     seen=$(printf '%s' "$d" | sed -n 's/.*contracts: v\([0-9][0-9]*\).*/\1/p')
-    if [ -z "$seen" ]; then say "NO-CONTRACT-VERSION $lane: DONE line has no 'contracts: vN' (current v$cur)"
+    ack=$(cat "$crew/lanes/$lane.contract-ack" 2>/dev/null)
+    if [ "$seen" != "$cur" ] && [ -n "$ack" ] && [ "$ack" = "$cur" ]; then say "CONTRACT-ACKED $lane: DONE says v${seen:-none}, orchestrator confirmed it is unaffected by v$cur"
+    elif [ -z "$seen" ]; then say "NO-CONTRACT-VERSION $lane: DONE line has no 'contracts: vN' (current v$cur)"
     elif [ "$seen" != "$cur" ]; then bad=1; say "STALE-CONTRACT $lane: built against v$seen, CONTRACTS.md is v$cur"
     else say "CONTRACT-OK $lane: v$seen"; fi
   done

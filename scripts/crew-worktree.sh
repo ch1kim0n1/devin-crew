@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Git worktree isolation: one detached worktree per lane, no commits, no extra branches.
 #   bash crew-worktree.sh <project> add <lane>      create .devin-crew/wt/<lane> from HEAD, point the lane at it
-#   bash crew-worktree.sh <project> merge <lane>    apply the lane's changes to the main tree as uncommitted edits
+#   bash crew-worktree.sh <project> merge <lane>    apply the lane's in-scope changes to the main tree as uncommitted edits; files that
+#                                                   conflict with earlier merges are listed, the rest still apply (exit 1)
 #   bash crew-worktree.sh <project> remove <lane>   delete the worktree (after merge)
 # <project> must be a git repo root. Run `add` for every lane before launching any.
 # ponytail: node_modules/.venv/venv at repo root are symlinked into each worktree so tests can run.
@@ -30,10 +31,13 @@ case "$cmd" in
     for l in $links; do [ -e "$proj/$l" ] && ln -s "$proj/$l" "$wt/$l"; done
     echo "$wt" > "$crew/lanes/$lane.workdir"
     echo "worktree: $wt"
+    if [ -f "$crew/scopes.txt" ]; then bash "$(dirname "$0")/crew-guard.sh" "$proj" scopes | grep "SCOPE OVERLAP" | sed 's/^/WARNING: /'; fi
+    true
     ;;
   merge)
     [ -d "$wt" ] || { echo "no worktree for $lane" >&2; exit 1; }
     excl=(); for l in $links; do excl+=(":!$l"); done
+    excl+=(":(exclude,glob)**/__pycache__/**" ":(exclude,glob)**/*.pyc" ":(exclude,glob)**/.DS_Store")
     git -C "$wt" add -N -- . "${excl[@]}" 2>/dev/null
     patch="$crew/lanes/$lane.patch"
     # Only the lane's own scope globs (scopes.txt) are merged; anything else it touched is reported and left behind.
@@ -46,7 +50,19 @@ case "$cmd" in
     if git -C "$proj" apply --check "$patch" 2>/tmp/crew-apply.err; then
       git -C "$proj" apply "$patch" && echo "$lane: merged ($(grep -c '^diff --git' "$patch") files), uncommitted"
     else
-      echo "$lane: CONFLICT, nothing applied:"; cat /tmp/crew-apply.err; exit 1
+      # Whole patch does not apply: apply every file that does, list the ones that conflict so they can be reconciled by hand.
+      ok=0; conflicts=""
+      while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        git -C "$wt" diff HEAD --binary -- "$f" > "$patch.one"
+        if git -C "$proj" apply --check "$patch.one" 2>/dev/null; then git -C "$proj" apply "$patch.one"; ok=$((ok + 1))
+        else conflicts="$conflicts$f"$'\n'; fi
+      done < <(git -C "$wt" diff HEAD --name-only -- "${globs[@]}")
+      rm -f "$patch.one"
+      echo "$lane: PARTIAL merge: $ok file(s) applied, the rest CONFLICT with changes already in the main tree:"
+      printf '%s' "$conflicts" | while IFS= read -r f; do [ -n "$f" ] && echo "  $f   (lane's version: $wt/$f)"; done
+      echo "  Reconcile by hand keeping both lanes' work (or resume the lane with the merged file), then rerun crew-guard.sh check."
+      exit 1
     fi
     ;;
   remove)

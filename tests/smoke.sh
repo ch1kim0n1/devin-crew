@@ -136,6 +136,29 @@ ok "print of a wake shows the unread mail count" 'printf "%s" "$d" | grep -q "re
 ok "print does not consume mail" '[ "$(bash $S/lane-msg.sh $dp pending)" = "dl not-started 1" ]'
 ok "print writes no events" '[ ! -e "$dp/.devin-crew/events.log" ]'
 
+echo "--- worktree merge, overlap, noise"
+mp="$work/mproj"; mkdir -p "$mp"; git -C "$mp" init -q -b main
+printf '# t\n\nbody\n' > "$mp/README.md"; echo x > "$mp/keep.txt"
+git -C "$mp" add -A; git -C "$mp" -c user.name=t -c user.email=t@t commit -q -m i
+mc="$mp/.devin-crew"; mkdir -p "$mc"
+printf 'a\tREADME.md\na\ta.txt\nb\tREADME.md\nb\tb.txt\n' > "$mc/scopes.txt"
+ok "scope lint flags two lanes owning README.md" 's=$(bash $S/crew-guard.sh $mp scopes); [ $? -eq 1 ] && printf "%s" "$s" | grep -q "SCOPE OVERLAP: a (README.md) and b (README.md)"'
+printf 'a\tsrc/*\nb\tdocs/*\n' > "$work/scopes.ok"; mkdir -p "$work/okproj/.devin-crew"; cp "$work/scopes.ok" "$work/okproj/.devin-crew/scopes.txt"
+ok "scope lint passes disjoint scopes" 'bash $S/crew-guard.sh $work/okproj scopes | grep -q "no overlaps"'
+bash "$S/crew-worktree.sh" "$mp" add a 2>&1 | grep -q "WARNING: SCOPE OVERLAP" && echo "ok   worktree add warns about overlapping scopes" && pass=$((pass + 1)) || { echo "FAIL worktree add warns about overlapping scopes"; fail=$((fail + 1)); }
+bash "$S/crew-worktree.sh" "$mp" add b >/dev/null 2>&1
+wa="$mc/wt/a"; wb="$mc/wt/b"
+printf '# t\n\nfrom a\n\nbody\n' > "$wa/README.md"; echo a > "$wa/a.txt"; mkdir -p "$wa/__pycache__"; echo junk > "$wa/__pycache__/x.cpython-314.pyc"
+printf '# t\n\nfrom b\n\nbody\n' > "$wb/README.md"; echo b > "$wb/b.txt"
+g=$(bash "$S/crew-guard.sh" "$mp" check 2>&1)
+ok "check ignores bytecode" '! printf "%s" "$g" | grep -qi pyc'
+ok "check reports the overlap" 'printf "%s" "$g" | grep -q "OVERLAP (lane a): README.md is owned by: a b"'
+m=$(bash "$S/crew-worktree.sh" "$mp" merge a 2>&1)
+ok "merge ignores bytecode and applies lane a" '! printf "%s" "$m" | grep -qi "NOT merged" && printf "%s" "$m" | grep -q "merged (2 files)" && grep -q "from a" $mp/README.md'
+m=$(bash "$S/crew-worktree.sh" "$mp" merge b 2>&1); rc=$?
+ok "conflicting file reported, rest still applied (partial merge)" '[ $rc -eq 1 ] && printf "%s" "$m" | grep -q "PARTIAL merge: 1 file(s) applied" && printf "%s" "$m" | grep -q "README.md" && [ -f $mp/b.txt ] && ! grep -q "from b" $mp/README.md'
+bash "$S/crew-worktree.sh" "$mp" remove a >/dev/null 2>&1; bash "$S/crew-worktree.sh" "$mp" remove b >/dev/null 2>&1
+
 echo "--- git rights"
 gproj="$work/gproj"; mkdir -p "$gproj"; git -C "$gproj" init -q
 last_prompt() { awk '/^=== call/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$STUB_OUT/prompts.log"; }
@@ -207,6 +230,9 @@ ok "verify writes status back" 'grep -q "| t2 .*| failed |" $crew/TASKS.md && gr
 ok "dash acceptance skipped" 'printf "%s" "$v" | grep -q "^SKIP t3 api"'
 ok "stale contract caught" 'printf "%s" "$v" | grep -q "^STALE-CONTRACT api: built against v1, CONTRACTS.md is v2"'
 ok "fresh contract ok" 'printf "%s" "$v" | grep -q "^CONTRACT-OK tests: v2"'
+bash "$S/crew-verify.sh" "$proj" ack-contract api >/dev/null
+v2=$(bash "$S/crew-verify.sh" "$proj" api 2>&1)
+ok "ack clears a stale-contract flag for an unaffected lane" 'printf "%s" "$v2" | grep -q "^CONTRACT-ACKED api" && ! printf "%s" "$v2" | grep -q STALE'
 printf '| t9 | api | s | - | sleep 30 | done |\n' > "$crew/TASKS.md"
 v=$(CREW_VERIFY_SECS=2 bash "$S/crew-verify.sh" "$proj" api 2>&1)
 ok "acceptance timeout enforced" 'printf "%s" "$v" | grep -q "^TIMEOUT t9 api"'

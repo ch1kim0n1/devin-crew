@@ -24,6 +24,8 @@ list_files() {
   for d in "${prune[@]}"; do args+=(-name "$d" -o); done
   find . \( "${args[@]}" -false \) -prune -o -type f -print | sed 's|^\./||' | sort
 }
+# build/runtime noise that is never a scope violation (bytecode, dependency dirs, OS files)
+noise='(^|/)(node_modules|\.venv|venv|__pycache__)(/|$)|\.pyc$|(^|/)\.DS_Store$'
 owners_of() { # path -> lane names whose scope matches (optionally only lane $2)
   local p=$1 only=${2:-} lane glob out=""
   while IFS=$'\t' read -r lane glob; do
@@ -35,6 +37,23 @@ owners_of() { # path -> lane names whose scope matches (optionally only lane $2)
 }
 
 case "$cmd" in
+  scopes)   # two lanes owning the same or nested paths is a planning mistake: it surfaces as a merge conflict later
+    [ -f "$crew/scopes.txt" ] || { echo "no scopes.txt" >&2; exit 2; }
+    n=0; entries=()
+    while IFS=$'\t' read -r lane glob; do [ -n "$lane" ] && entries+=("$lane	$glob"); done < "$crew/scopes.txt"
+    i=0; for a in ${entries[@]+"${entries[@]}"}; do
+      la=${a%%	*}; ga=${a#*	}; j=0
+      for b in ${entries[@]+"${entries[@]}"}; do
+        j=$((j + 1)); [ "$j" -le "$((i + 1))" ] && continue
+        lb=${b%%	*}; gb=${b#*	}; [ "$la" = "$lb" ] && continue
+        # shellcheck disable=SC2254
+        if case "$ga" in $gb) true;; *) false;; esac || case "$gb" in $ga) true;; *) false;; esac; then
+          echo "SCOPE OVERLAP: $la ($ga) and $lb ($gb)"; n=$((n + 1)); fi
+      done; i=$((i + 1))
+    done
+    [ "$n" -eq 0 ] && echo "scopes: no overlaps"
+    [ "$n" -eq 0 ]
+    ;;
   lock)
     if [ -f "$crew/LOCK" ] && [ "${1:-}" != "--force" ]; then
       age=$(( $(date +%s) - $(head -1 "$crew/LOCK") ))
@@ -76,8 +95,10 @@ case "$cmd" in
         lane=$(basename "$wf" .workdir); wt=$(cat "$wf")
         [ -d "$wt" ] || continue
         git -C "$wt" status --porcelain --untracked-files=all | sed -E 's/^.{3}//; s/.* -> //' \
-          | grep -vE '^(node_modules|\.venv|venv)(/|$)' | while read -r path; do
+          | grep -vE "$noise" | while read -r path; do
+            o=$(owners_of "$path")
             [ -z "$(owners_of "$path" "$lane")" ] && echo "OUTSIDE SCOPE (lane $lane): $path"
+            [ "$(echo $o | wc -w | tr -d ' ')" -gt 1 ] && echo "OVERLAP (lane $lane): $path is owned by: $o"
           done > "$crew/check.$lane.tmp"
         if [ -s "$crew/check.$lane.tmp" ]; then cat "$crew/check.$lane.tmp"; bad=1; fi
         rm -f "$crew/check.$lane.tmp"

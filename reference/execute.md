@@ -6,7 +6,7 @@
 
 1. Preflight: `bash S/crew-doctor.sh <project> --trust`. It checks login, the model, tools, git state, workspace trust. Any FAIL: tell the user the fix and stop. "Not trusted": the user runs `devin` once in the project and accepts; never bypass trust. The check deletes only its own session.
 2. `crew-guard.sh <project> lock`.
-3. Write the coordination files (`reference/setup-files.md`): PLAN.md, TASKS.md, ROSTER.md, CONTRACTS.md, scopes.txt, BOARD.md; set the budget with `crew-budget.sh <project> set <minutes>`.
+3. Write the coordination files (`reference/setup-files.md`): PLAN.md, TASKS.md, ROSTER.md, CONTRACTS.md, scopes.txt (then `crew-guard.sh <project> scopes`: any `SCOPE OVERLAP` is a planning mistake to fix now), BOARD.md; set the budget with `crew-budget.sh <project> set <minutes>`.
 4. `crew-guard.sh <project> baseline "<cmd>"`.
 5. Isolation (`reference/guardrails.md`): worktrees (`crew-worktree.sh add <lane>` for every lane) for a git repo root, else `crew-guard.sh <project> snapshot`.
 
@@ -24,4 +24,5 @@
 - Out-of-scope edits: drop or `restore` them, mail the lane, count a failed attempt.
 - Wrong or partial: resume the same lane with a correction file (never a `running` lane).
 - `BLOCKED`: answer from CONTRACTS.md, bump `version:`, mail the consumers; escalate to the user only for product decisions.
+- Contract bumped: mail every affected owner and consumer (ROSTER.md) with exactly what changed; refresh their worktrees (`reference/guardrails.md`); for lanes the bump does not touch run `bash S/crew-verify.sh <project> ack-contract <lane>` so they are not flagged `STALE-CONTRACT` and need no wake-up. `crew-verify.sh` clears an affected lane only when its new DONE line says the current `contracts: v<N>`.
 - Task status is kept by the scripts (`crew-tasks.sh`); mark `done` by hand only for tasks with no acceptance command, after your own check.
