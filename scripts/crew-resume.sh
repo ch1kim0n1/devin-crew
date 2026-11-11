@@ -26,6 +26,10 @@ running=0
 for f in "$crew"/lanes/*.status; do
   [ -e "$f" ] || continue
   lane=$(basename "$f" .status); st=$(cat "$f")
+  if [ -f "$crew/lanes/$lane.needs-user" ]; then
+    say "Lane $lane STOPPED on a Devin error ($(head -1 "$crew/lanes/$lane.needs-user")). Tell the user first: what failed, the evidence (cat $crew/lanes/$lane.needs-user), their fix (bash $here/crew-observe.sh $proj $lane --ufix <CLASS>). Relaunch only after they say retry, with CREW_RETRY_OK=1."
+    continue
+  fi
   case "$st" in
     running)
       pid=$(cat "$crew/lanes/$lane.pid" 2>/dev/null)

@@ -19,6 +19,7 @@
 
 ## On each lane exit
 
+- Output says `NEEDS-USER lane=<l> class=<C>` (Devin hit a limit, login, trust, model, crash or an unexplained exit): **tell the user now**, before anything else and even while other lanes run. Message: lane, class, the evidence lines, `user fix:` line, and the choice "fix it and say retry, or say retry". Do not relaunch, resume, or let the router wake that lane until they answer; then `CREW_RETRY_OK=1 bash S/devin-lane.sh ...`. Other lanes keep going; their work is not lost.
 - Not `done`: run `bash S/crew-observe.sh <project> <lane>` before deciding anything. The user asks what a lane is doing: run it too.
 - Read the log tail and the lane's DONE line, run `crew-guard.sh <project> check`, route mail (`reference/mail-router.md`), and in worktree mode `crew-worktree.sh <project> merge <lane>`.
 - Out-of-scope edits: drop or `restore` them, mail the lane, count a failed attempt.

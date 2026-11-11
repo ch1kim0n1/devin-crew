@@ -12,7 +12,7 @@ Scripts live in `~/.claude/skills/devin-crew/scripts/` (`S` below). Detail lives
 ## Invocation
 
 - `/devin-crew` alone: **context only.** Run nothing, create nothing (you may read `S/../AUTONOMY`). Reply in at most 6 lines: you are the brain between them and headless Devin workers; first you study the project and goal and propose a plan, they decide, then workers run, then you QA each milestone; current autonomy (`ask`/`auto`); ask for the goal. Treat their next goal message as a crew job.
-- `/devin-crew <goal>`: start at phase 1.
+- `/devin-crew <goal>`: the user has already decided to use a crew, so do phase 1 and then phase 2 in the same reply. Never stop after recon to ask "how many Devins?" or "what do you want?". The proposal opens with the Devin count (N lanes, one line each: name, job, owned files) and why that many. Ask a question only if the goal is too ambiguous to size; even then give a provisional count.
 - `/devin-crew status`: `bash S/crew-status.sh <project>`, plus `crew-observe.sh <project>` for anything running or failed; summarize.
 - `/devin-crew resume`: `bash S/crew-resume.sh <project>` prints the approved plan, live state and a numbered NEXT list. Follow it; confirm with the user first if PLAN.md is missing. Continue at phase 4.
 
@@ -23,7 +23,7 @@ Every lane runs `swe-2-flash-high` (the script coerces anything else): free, wea
 ## Phases
 
 1. **Recon** (read-only: no devin, no script, no files). Study the project, restate the user's objective, find the scope, find how to verify. Ask if the objective is ambiguous. Checklist: `reference/recon-and-plan.md`.
-2. **Proposal**, in chat: objective and scope; milestones with tasks; **how many Devins and why** (never more lanes than independent file clusters; cap 5; small or serial work gets 1-2); contracts; isolation mode; QA plan; git rights (default none); a lane-minutes budget (parallel lanes add up; a small task is tens of minutes, a big one a few hours); risks; open questions; your single recommended plan.
+2. **Proposal**, in chat, led by **how many Devins and why** (never more lanes than independent file clusters; cap 5; small or serial work gets 1-2), then: objective and scope; milestones with tasks; contracts; isolation mode; QA plan; git rights (default none); a lane-minutes budget (parallel lanes add up; a small task is tens of minutes, a big one a few hours); risks; open questions; your single recommended plan.
 3. **Plan with the user.** Revise until they say go. Their edits win; flag risk, then obey. Nothing launches and no `.devin-crew/` exists before the go. The `AUTONOMY` file set to `auto` (only by the user's own words: "you pick", "stop asking") skips waiting for the go, never phases 1, 2 or 5. Plan changes mid-run (more lanes, wider scope, dropped milestone) go back to the user first. On the go, write the approved plan to `.devin-crew/PLAN.md` (format in `reference/setup-files.md`) and keep it current: it is all that survives a context reset.
 4. **Execute**, per milestone (full steps: `reference/execute.md`). First milestone: `crew-doctor.sh <project> --trust`, lock, coordination files, budget, baseline, isolation. Each wave: write briefs (goal, owned files, contracts, exact verify command, definition of done, what siblings are doing now), show `devin-lane.sh --print` to the user in `ask` mode, launch every lane plus `crew-router.sh` in one message with `run_in_background: true`. Wait for exit notifications; never poll or wait blind. On every exit not `done`, `crew-observe.sh` first. Then read the DONE line, `crew-guard.sh check`, route mail, merge (worktrees). Wrong or partial: resume the same lane with a correction.
 5. **QA, after all lanes of the milestone exited.** Devins code fast but miss details and the big idea: assume the work is incomplete until you prove otherwise. Run `crew-qa.sh`, `crew-verify.sh`, and the full production checklist `reference/qa-checklist.md` (mutation spot-check, requirement matrix, edge/error paths, security, docs, end-to-end run, reviewer lane, QA history watch list); flow in `reference/qa.md`. Evidence for every item; any open HIGH is a FAIL. Verdict PASS / PASS WITH NOTES / FAIL in `.devin-crew/QA.md`. FAIL: new tasks, back to phase 4. Never tell the user "done" before PASS on every milestone.
@@ -31,7 +31,7 @@ Every lane runs `swe-2-flash-high` (the script coerces anything else): free, wea
 
 ## Stop and ask the user only if
 
-A decision is theirs (product direction, scope, number of workers), an action is destructive or outward-facing (push, deploy, delete, restoring a whole snapshot), trust must be granted, the plan must change, the budget is exceeded (launches are refused until they say raise it), or the same task failed 3 times. Everything else: keep going silently.
+A decision is theirs (product direction, scope, number of workers), an action is destructive or outward-facing (push, deploy, delete, restoring a whole snapshot), trust must be granted, the plan must change, the budget is exceeded (launches are refused until they say raise it), the same task failed 3 times, or **Devin itself errors out** (usage limit, login, trust, model, crash, or an exit with no cause). The lane script writes `lanes/<lane>.needs-user` and prints `NEEDS-USER`; tell the user at once, even while other lanes run: which lane, the class, the evidence, their fix. They fix it and say retry, or just say retry; only then relaunch with `CREW_RETRY_OK=1` (the script refuses otherwise, exit 5). Never retry such an error silently. Everything else: keep going silently.
 
 ## Rules
 
@@ -45,6 +45,8 @@ A decision is theirs (product direction, scope, number of workers), an action is
 | Mistake | Fix |
 |---|---|
 | Proposing a plan before reading the project | Phase 1 first, always |
+| Stopping after recon to ask what to do | Same reply: recon, then the proposal with the Devin count |
+| Retrying a Devin limit/login error on your own | Report to the user; `CREW_RETRY_OK=1` only after their word |
 | More lanes than independent file clusters | Fewer lanes; say why |
 | Launching before the user's go | Phase 3 gate (unless `auto`) |
 | Trusting "DONE" | Rerun acceptance yourself; run the full QA checklist |

@@ -55,14 +55,29 @@ classify_error() { # text file(s) -> CLASS + evidence
   return 1
 }
 
+ufix() { case "$1" in   # what the USER can do about it (goes into the report Claude gives them)
+  AUTH) echo "log in again: devin auth login";;
+  RATE_OR_QUOTA) echo "Devin usage limit or billing: wait for the limit to reset, or add credit / change plan";;
+  TRUST) echo "run devin once in the project folder and accept workspace trust";;
+  MODEL) echo "the lane model is unavailable: check devin models; the model is a fixed rule, so tell me if you want it changed";;
+  NETWORK) echo "check the network, VPN or proxy";;
+  CRASH) echo "Devin crashed or ran out of memory: free memory or update devin";;
+  EXIT-*) echo "Devin exited with an error and no known cause: see the log tail";;
+  *) echo "see the log tail";;
+esac; }
+
+if [ "${3:-}" = "--error" ]; then   # class line + evidence lines for the lane's newest log (empty = no known cause)
+  l=$(ls -t "$crew"/logs/"${2:-x}".*.log 2>/dev/null | head -1)
+  [ -n "$l" ] && classify_error "$l"
+  exit 0
+fi
+if [ "${3:-}" = "--ufix" ]; then ufix "${4:-}"; exit 0; fi
+
 remedy() { case "$1" in
-  AUTH) echo "ask the user to run: devin auth login (credentials expired or missing)";;
-  RATE_OR_QUOTA) echo "wait and retry later, or ask the user (quota/billing is theirs)";;
-  TRUST) echo "ask the user to run devin once in the project and accept trust";;
+  AUTH|RATE_OR_QUOTA|TRUST|MODEL) echo "STOP. Report to the user (what failed, the evidence, their fix: $(ufix "$1")) and ask: they fix it and say retry, or they say retry. Relaunch only with CREW_RETRY_OK=1 after their word.";;
   PERMISSION) echo "lane was not in bypass mode; relaunch with permission_mode dangerous";;
   CONTEXT_TOO_LONG) echo "start a fresh lane with a narrower task (delete the lane's .sid file first)";;
   NETWORK) echo "retry once; if it repeats, ask the user about connectivity/VPN";;
-  MODEL) echo "model unavailable; check 'devin models', ask the user before changing the fixed model";;
   CRASH) echo "read the process log tail below, retry once with a narrower task, then report";;
   TIMEOUT) echo "task too big for one turn: split it, relaunch with a narrower task";;
   STALLED*) echo "kill and resume with a nudge (the watchdog does this automatically)";;

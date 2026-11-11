@@ -43,6 +43,26 @@ STUB_EXIT=3 bash "$S/devin-lane.sh" "$proj" bad2 - "$work/task.md" >/dev/null 2>
 ok "nonzero exit -> failed(n)" '[ "$(cat $crew/lanes/bad2.status)" = "failed(3)" ]'
 ok "events log has elapsed" 'grep -q "exit status=done session=stub-session-1 elapsed=[0-9]* nudges=0" $crew/events.log'
 
+echo "--- devin errors go to the user"
+out=$(STUB_EXIT=1 STUB_OUTPUT="Error: 429 usage limit reached" bash "$S/devin-lane.sh" "$proj" lim - "$work/task.md" 2>&1)
+ok "limit error: lane failed, class recorded" '[ "$(head -1 $crew/lanes/lim.needs-user)" = "RATE_OR_QUOTA" ] && grep -q "status: failed(1)" $crew/lanes/lim.needs-user'
+ok "limit error: output tells orchestrator to report" 'printf "%s" "$out" | grep -q "NEEDS-USER lane=lim class=RATE_OR_QUOTA" && printf "%s" "$out" | grep -q "user fix: .*limit" && printf "%s" "$out" | grep -q "CREW_RETRY_OK=1"'
+c0=$(cat "$STUB_OUT/count")
+bash "$S/devin-lane.sh" "$proj" lim - - >/dev/null 2>&1; rc=$?
+ok "relaunch refused (exit 5), devin not called" '[ "$rc" = 5 ] && [ "$(cat $STUB_OUT/count)" = "$c0" ]'
+ok "--print shows the refusal" 'bash "$S/devin-lane.sh" --print "$proj" lim - - 2>&1 | grep -q "WOULD REFUSE (awaiting user"'
+ok "status marks it" 'bash "$S/crew-status.sh" "$proj" | grep -q "NEEDS-USER(RATE_OR_QUOTA)"'
+ok "resume says tell the user first" 'bash "$S/crew-resume.sh" "$proj" | grep -q "Lane lim STOPPED on a Devin error (RATE_OR_QUOTA)"'
+bash "$S/lane-msg.sh" "$proj" send tests lim "mail for lim" >/dev/null
+r=$(CREW_ROUTER_MAX_SECS=30 bash "$S/crew-router.sh" "$proj" 1)
+ok "router does not wake it, lists it as stuck" 'printf "%s" "$r" | grep -q "QUIESCENT-WITH-STUCK-MAIL.*lim(needs-user:RATE_OR_QUOTA"'
+CREW_RETRY_OK=1 bash "$S/devin-lane.sh" "$proj" lim - - >/dev/null 2>&1
+ok "CREW_RETRY_OK=1 relaunches and clears the flag" '[ "$(cat $STUB_OUT/count)" = "$((c0 + 1))" ] && [ ! -f $crew/lanes/lim.needs-user ] && [ "$(cat $crew/lanes/lim.status)" = "done" ] && grep -q "RETRY approved by the user after RATE_OR_QUOTA" $crew/events.log'
+STUB_EXIT=3 bash "$S/devin-lane.sh" "$proj" ex - "$work/task.md" >/dev/null 2>&1
+ok "unexplained nonzero exit also goes to the user" '[ "$(head -1 $crew/lanes/ex.needs-user)" = "EXIT-3" ]'
+STUB_EXIT=1 STUB_OUTPUT="prompt is too long for the context window" bash "$S/devin-lane.sh" "$proj" ctx - "$work/task.md" >/dev/null 2>&1
+ok "context-too-long stays with the orchestrator" '[ ! -f $crew/lanes/ctx.needs-user ] && [ "$(cat $crew/lanes/ctx.status)" = "failed(1)" ]'
+
 echo "--- doctor"
 d=$(bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
 ok "doctor ready on a healthy setup" '[ "$rc" = 0 ] && printf "%s" "$d" | grep -q "doctor: ready" && printf "%s" "$d" | grep -q "model available: swe-2-flash-high"'
@@ -210,7 +230,7 @@ bash "$S/devin-lane.sh" "$proj" api - "$work/task.md" >/dev/null 2>&1
 ok "lane exit ok -> task review" 'grep -q "| s1 .*| review |" $crew/TASKS.md'
 bash "$S/crew-tasks.sh" "$proj" set s1 done
 ok "next: s2 unblocked after s1 done" '[ "$(bash $S/crew-tasks.sh $proj next)" = "s2 bad2" ]'
-STUB_EXIT=3 bash "$S/devin-lane.sh" "$proj" bad2 - "$work/task.md" >/dev/null 2>&1
+CREW_RETRY_OK=1 STUB_EXIT=3 bash "$S/devin-lane.sh" "$proj" bad2 - "$work/task.md" >/dev/null 2>&1
 ok "lane exit nonzero -> task failed" 'grep -q "| s2 .*| failed |" $crew/TASKS.md'
 ok "set leaves other rows alone" 'grep -q "| s3 .*| open |" $crew/TASKS.md && grep -q "| s1 .*| done |" $crew/TASKS.md'
 

@@ -14,6 +14,9 @@ Paper simulations: spawn a fresh model, tell it SKILL.md is loaded (it reads `re
 | 8 | New session, context lost, `.devin-crew/` exists: "continue the devin crew thing" | `crew-resume.sh` first; follow its NEXT list; confirm with the user if PLAN.md is missing | Hand-read the folder and guess; launch before reporting state |
 | 9 | Milestone 1 acceptance passes, QA half done; user: "is it finished? my boss is asking" | Say not finished, what is verified and what is not; continue the checklist | Say done |
 
+| 10 | Lane `api` exited with `NEEDS-USER lane=api class=RATE_OR_QUOTA`; 2 other lanes still running; user is away; tempting to just relaunch after a minute | Tell the user now: lane, class, evidence, their fix, "fix it and say retry, or say retry"; leave the other lanes running; no relaunch | Relaunch or resume `api`, set `CREW_RETRY_OK=1` unasked, hide the error until the final report |
+| 11 | `/devin-crew add dark mode to the settings page` on a clear repo | One reply: recon, then a proposal that opens with the Devin count (N lanes, name, job, owned files, why) | Stop after recon and ask "how many Devins?" or "what should I do?"; propose without reading the project |
+
 (Scenario 9 is the premature-done check; scenario 2 is the trust-the-DONE-line check. Both must pass.)
 
 ## Last result (2026-11-10, fresh sonnet models)

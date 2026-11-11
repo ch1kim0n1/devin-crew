@@ -34,6 +34,17 @@ if b=$(bash "$skill_dir/scripts/crew-budget.sh" "$proj" check); then :; else
   fi
   echo "$b" >&2
 fi
+# A Devin error that stops the lane (limit, login, trust, crash...) is the USER's to see: no relaunch until they say retry.
+nu="$crew/lanes/$lane.needs-user"
+if [ -f "$nu" ]; then
+  if [ "${CREW_RETRY_OK:-0}" = 1 ]; then
+    [ "$dry" -eq 1 ] || { ev "RETRY approved by the user after $(head -1 "$nu")"; rm -f "$nu"; }
+  elif [ "$dry" -eq 1 ]; then echo "WOULD REFUSE (awaiting user after Devin error $(head -1 "$nu"))" >&2
+  else
+    echo "lane $lane stopped on a Devin error ($(head -1 "$nu")) and waits for the user. Report it to them; relaunch with CREW_RETRY_OK=1 only after they say retry." >&2
+    ev "launch refused: awaiting user decision after $(head -1 "$nu")"; exit 5
+  fi
+fi
 if [ "$model" = "-" ]; then model=$(cat "$model_file" 2>/dev/null) || model=swe-2-flash-high; fi
 # User's standing rule (2026-11-09): lanes ALWAYS run swe-2-flash-high. Anything else is coerced.
 if [ "$model" != "swe-2-flash-high" ]; then
@@ -160,5 +171,22 @@ rm -f "$crew/lanes/$lane.pid"
 ev "exit status=$st session=${sid:-unknown} elapsed=$(( $(date +%s) - t0 )) nudges=$attempt"
 echo "lane=$lane status=$st session=${sid:-unknown} log=$log"
 [ "$st" = "done" ] || echo "diagnose: bash $skill_dir/scripts/crew-observe.sh $proj $lane"
+if [ "$st" != "done" ]; then
+  # Which failures are the user's to handle? Limits, login, trust, model, crashes, and exits with no known cause.
+  # Stalls and timeouts stay with the orchestrator (nudge / split), unless the log shows a limit-type cause.
+  err=$(bash "$obs" "$proj" "$lane" --error); cls=$(printf '%s\n' "$err" | head -1); user=0
+  case "$st" in
+    failed\(timeout\)|failed\(stalled*) case "$cls" in AUTH|RATE_OR_QUOTA|TRUST|MODEL) user=1;; esac;;
+    *) case "$cls" in PERMISSION|CONTEXT_TOO_LONG) ;; "") cls="EXIT-${code:-1}"; user=1;; *) user=1;; esac;;
+  esac
+  if [ "$user" -eq 1 ]; then
+    { echo "$cls"; echo "status: $st"; printf '%s\n' "$err" | tail -n +2; } > "$nu"
+    ev "NEEDS-USER class=$cls status=$st"
+    echo "NEEDS-USER lane=$lane class=$cls status=$st"
+    printf '%s\n' "$err" | tail -n +2
+    echo "user fix: $(bash "$obs" "$proj" "$lane" --ufix "$cls")"
+    echo "ORCHESTRATOR: stop and tell the user now (what failed, the evidence, their fix). They either fix it and say retry, or say retry. Do not relaunch this lane until then; after their word run it with CREW_RETRY_OK=1."
+  fi
+fi
 if [ "$st" = "done" ]; then exit 0; fi
 exit "${code:-1}"

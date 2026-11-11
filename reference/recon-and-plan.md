@@ -10,7 +10,7 @@ Recon is **read-only**: no `devin` call, no script, no file created, nothing wri
 2. **Conventions and docs.** README, CLAUDE.md/AGENTS.md, CONTRIBUTING, lint/format config.
 3. **How to verify.** Test, build, lint commands that exist and look runnable. This becomes the baseline command and every acceptance command. None exist: say so; the plan needs a task that adds one.
 4. **State.** `git status` (uncommitted work the lanes would start from), current branch, recent commits touching the objective's area.
-5. **Objective.** Restate the user's goal in 1-3 lines with what "done" looks like. Vague or ambiguous: ask the user now (AskUserQuestion), before proposing anything.
+5. **Objective.** Restate the user's goal in 1-3 lines with what "done" looks like. Too ambiguous to size even roughly: ask the user now (AskUserQuestion) and include your provisional lane count in the question. Otherwise do not ask: go straight to the proposal in the same reply, Devin count first.
 6. **Scope.** Which files/dirs the objective actually touches, which it must not touch, and the size of the change (files, rough lines). Anything shared across the touch-points (a type, an API, a config) is a contract candidate.
 
 ## 2. Proposal (shown in chat; the user decides)

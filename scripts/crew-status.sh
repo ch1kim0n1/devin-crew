@@ -29,6 +29,7 @@ for f in "$crew"/lanes/*.status; do
   fi
   mail=$(echo "$pending" | awk -v l="$lane" '$1==l{print $3}'); mail=${mail:-0}
   wt=""; [ -f "$crew/lanes/$lane.workdir" ] && wt=" worktree"
+  [ -f "$crew/lanes/$lane.needs-user" ] && wt="$wt NEEDS-USER($(head -1 "$crew/lanes/$lane.needs-user"))"
   last=$(ls -t "$crew"/logs/"$lane".*.log 2>/dev/null | head -1)
   tail1=""; [ -n "$last" ] && tail1=$(grep -v '^[[:space:]]*$' "$last" | tail -1 | cut -c1-90)
   printf '%-10s %-44s unread=%s%s | %s\n' "$lane" "$st" "$mail" "$wt" "$tail1"
