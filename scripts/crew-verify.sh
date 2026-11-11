@@ -60,12 +60,12 @@ if [ -f "$crew/CONTRACTS.md" ]; then
     [ -e "$f" ] || continue
     lane=$(basename "$f" .status)
     [ -n "$only" ] && [ "$lane" != "$only" ] && continue
-    d=$(grep -E "DONE $lane:" "$crew/BOARD.md" 2>/dev/null | tail -1)
+    d=$(grep -E "DONE $lane( |:|\()" "$crew/BOARD.md" 2>/dev/null | tail -1)   # lanes sometimes write "DONE lane (v2):"
     [ -z "$d" ] && continue
     seen=$(printf '%s' "$d" | sed -n 's/.*contracts: v\([0-9][0-9]*\).*/\1/p')
     ack=$(cat "$crew/lanes/$lane.contract-ack" 2>/dev/null)
     if [ "$seen" != "$cur" ] && [ -n "$ack" ] && [ "$ack" = "$cur" ]; then say "CONTRACT-ACKED $lane: DONE says v${seen:-none}, orchestrator confirmed it is unaffected by v$cur"
-    elif [ -z "$seen" ]; then say "NO-CONTRACT-VERSION $lane: DONE line has no 'contracts: vN' (current v$cur)"
+    elif [ -z "$seen" ]; then say "NO-CONTRACT-VERSION $lane: its latest DONE line has no 'contracts: vN' (current v$cur); check by hand or have it repost the DONE line in the exact format"
     elif [ "$seen" != "$cur" ]; then bad=1; say "STALE-CONTRACT $lane: built against v$seen, CONTRACTS.md is v$cur"
     else say "CONTRACT-OK $lane: v$seen"; fi
   done

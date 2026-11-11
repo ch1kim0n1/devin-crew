@@ -50,7 +50,7 @@ if [ -f "$sid_file" ]; then
   if [ "$dry" -eq 1 ]; then   # peek only: reading would advance the lane's mail cursor
     un=$(bash "$msg" "$proj" pending | awk -v l="$lane" '$1==l{print $3}'); mail="[dry run: ${un:-0} unread message(s) would be inserted here]"
   else mail=$(bash "$msg" "$proj" read "$lane"); fi
-  [ "$task" = "-" ] && body="You were woken because you have new mail. Handle every message, finish any work it implies, then append an updated DONE line to $crew/BOARD.md and reply with the same summary."
+  [ "$task" = "-" ] && body="You were woken because you have new mail. Handle every message, finish any work it implies, then append an updated DONE line to $crew/BOARD.md in exactly the format from your instructions (DONE <lane>: files changed: ... | verified: ... | contracts: v<N, the CONTRACTS.md version you last read> | open issues for other lanes: ...) and reply with the same summary."
   prompt=$(printf 'NEW MAIL (from other lanes):\n%s\n\n%s' "$mail" "$body")
   ev "resume session $(cat "$sid_file")"
 else

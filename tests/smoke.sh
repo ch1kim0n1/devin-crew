@@ -230,6 +230,9 @@ ok "verify writes status back" 'grep -q "| t2 .*| failed |" $crew/TASKS.md && gr
 ok "dash acceptance skipped" 'printf "%s" "$v" | grep -q "^SKIP t3 api"'
 ok "stale contract caught" 'printf "%s" "$v" | grep -q "^STALE-CONTRACT api: built against v1, CONTRACTS.md is v2"'
 ok "fresh contract ok" 'printf "%s" "$v" | grep -q "^CONTRACT-OK tests: v2"'
+printf 'DONE tests (v2): files changed: b | verified: y -> ok | open issues: none\n' >> "$crew/BOARD.md"
+v3=$(bash "$S/crew-verify.sh" "$proj" tests 2>&1)
+ok "off-format DONE line is a warning, not a false STALE" 'printf "%s" "$v3" | grep -q "^NO-CONTRACT-VERSION tests" && ! printf "%s" "$v3" | grep -q "^STALE"'
 bash "$S/crew-verify.sh" "$proj" ack-contract api >/dev/null
 v2=$(bash "$S/crew-verify.sh" "$proj" api 2>&1)
 ok "ack clears a stale-contract flag for an unaffected lane" 'printf "%s" "$v2" | grep -q "^CONTRACT-ACKED api" && ! printf "%s" "$v2" | grep -q STALE'
