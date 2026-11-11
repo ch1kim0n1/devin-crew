@@ -159,6 +159,12 @@ m=$(bash "$S/crew-worktree.sh" "$mp" merge b 2>&1); rc=$?
 ok "conflicting file reported, rest still applied (partial merge)" '[ $rc -eq 1 ] && printf "%s" "$m" | grep -q "PARTIAL merge: 1 file(s) applied" && printf "%s" "$m" | grep -q "README.md" && [ -f $mp/b.txt ] && ! grep -q "from b" $mp/README.md'
 bash "$S/crew-worktree.sh" "$mp" remove a >/dev/null 2>&1; bash "$S/crew-worktree.sh" "$mp" remove b >/dev/null 2>&1
 
+printf '## Milestone 1: demo   verdict: PASS WITH NOTES\n' > "$rc_/QA.md"
+r=$(bash "$S/crew-resume.sh" "$rp")
+ok "all done + recorded verdict -> finish, not QA again" 'printf "%s" "$r" | grep -q "latest QA verdict is PASS WITH NOTES" && ! printf "%s" "$r" | grep -q "run milestone QA"'
+printf '## Milestone 1: demo   verdict: FAIL\n' > "$rc_/QA.md"
+ok "FAIL verdict -> failures become tasks" 'bash $S/crew-resume.sh $rp | grep -q "latest QA verdict is FAIL"'
+
 echo "--- git rights"
 gproj="$work/gproj"; mkdir -p "$gproj"; git -C "$gproj" init -q
 last_prompt() { awk '/^=== call/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$STUB_OUT/prompts.log"; }

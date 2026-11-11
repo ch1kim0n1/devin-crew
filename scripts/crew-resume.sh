@@ -45,7 +45,12 @@ if [ -f "$crew/TASKS.md" ]; then
   nx=$(bash "$here/crew-tasks.sh" "$proj" next)
   [ -n "$nx" ] && say "Launchable now (deps done, lane idle):$(echo "$nx" | awk '{printf " %s(%s)", $1, $2}'). Brief them per SKILL.md phase 4 (respect the plan's git rights and budget)."
   if [ "${op:-0}" -eq 0 ] && [ "${rn:-0}" -eq 0 ] && [ "${rv:-0}" -eq 0 ] && [ "${fl:-0}" -eq 0 ] && [ "${dn:-0}" -gt 0 ] && [ "$running" -eq 0 ]; then
-    say "All tasks done: run milestone QA (crew-qa.sh, crew-verify.sh, reference/qa-checklist.md), write the verdict in QA.md; on PASS for every milestone, finish and report once."
+    verdict=$(grep -oE 'verdict: (PASS WITH NOTES|PASS|FAIL)' "$crew/QA.md" 2>/dev/null | tail -1 | sed 's/verdict: //')
+    case "$verdict" in
+      PASS|"PASS WITH NOTES") say "All tasks done and the latest QA verdict is $verdict. If every milestone in PLAN.md has a verdict: finish (crew-worktree.sh remove each lane, crew-guard.sh unlock) and report once, quoting the verdict and any notes. Otherwise plan and start the next milestone.";;
+      FAIL) say "All tasks show done but the latest QA verdict is FAIL: the failures must become new tasks in TASKS.md (reference/qa.md), then back to execute.";;
+      *) say "All tasks done: run milestone QA (crew-qa.sh, crew-verify.sh, reference/qa-checklist.md), write the verdict in QA.md; on PASS for every milestone, finish and report once.";;
+    esac
   fi
 else say "No TASKS.md: the run stopped before decomposition. Rebuild tasks from PLAN.md with the user's OK."; fi
 
