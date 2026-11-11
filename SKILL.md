@@ -14,7 +14,7 @@ Scripts live in `~/.claude/skills/devin-crew/scripts/` (`S` below). Devin headle
 - `/devin-crew` alone: **context only.** Run nothing, create nothing (you may read `S/../AUTONOMY`). Reply in at most 6 lines: you are the brain between them and headless Devin workers; first you study the project and the goal and propose a plan, they decide, then workers run, then you QA each milestone; current autonomy (`ask`/`auto`); ask for the goal. Treat their next goal message as a crew job.
 - `/devin-crew <goal>`: start at phase 1.
 - `/devin-crew status`: `bash S/crew-status.sh <project>` (live state per lane), and `crew-observe.sh <project>` for anything running or failed; summarize.
-- `/devin-crew resume`: `crew-status.sh`; a lane `running-but-NO-PROCESS` is failed; `crew-guard.sh <project> lock --force`; wake or relaunch lanes from saved sessions; continue at phase 4.
+- `/devin-crew resume`: `bash S/crew-resume.sh <project>` prints the approved PLAN.md, the live state, and a numbered NEXT list (mail, dead lanes, review/failed tasks, launchable tasks, QA due). Follow it; confirm with the user first if PLAN.md is missing. Then continue at phase 4.
 
 ## Fixed settings (user's standing rules, 2026-11-09)
 
@@ -24,7 +24,7 @@ Every lane runs `swe-2-flash-high` (script coerces anything else): free, weaker 
 
 1. **Recon** (read-only: no devin, no script, no files). Study the project, restate the user's objective, find the scope, find how to verify. Ask the user if the objective is ambiguous. Checklist: `reference/recon-and-plan.md`.
 2. **Proposal.** In chat: objective and scope, milestones with tasks, **how many Devins and why** (never more lanes than independent file clusters; cap 5; small or serial work gets 1-2), contracts, isolation mode, QA plan, risks, open questions, your single recommended plan.
-3. **Plan with the user.** Revise until they say go. Their edits win; flag risk, then obey. Nothing launches and no `.devin-crew/` exists before the go. `AUTONOMY` file `auto` (set only by the user's own words: "you pick", "stop asking") skips waiting for the go, never phases 1, 2 or 5. Mid-run changes to the plan (more lanes, wider scope, dropped milestone) go back to the user first.
+3. **Plan with the user.** Revise until they say go. Their edits win; flag risk, then obey. Nothing launches and no `.devin-crew/` exists before the go. `AUTONOMY` file `auto` (set only by the user's own words: "you pick", "stop asking") skips waiting for the go, never phases 1, 2 or 5. Mid-run changes to the plan (more lanes, wider scope, dropped milestone) go back to the user first. The moment they say go, write the approved plan to `.devin-crew/PLAN.md` (format: `reference/setup-files.md`) and keep it current: it is all that survives a context reset.
 4. **Execute**, per milestone:
    1. First milestone only: preflight `bash S/crew-doctor.sh <project> --trust` (login, model, tools, git state, workspace trust; any FAIL -> tell the user the fix and stop; "not trusted" -> the user runs `devin` once there; never bypass trust; the check deletes only its own session), `crew-guard.sh <project> lock`, write the coordination files (`reference/setup-files.md`), `crew-guard.sh <project> baseline "<cmd>"`, isolation (`reference/guardrails.md`: worktrees for a git repo root, else `snapshot`).
    2. Write each task as a brief in `.devin-crew/prompts/<lane>-<n>.md`: goal, owned files, contracts, exact verify command, definition of done, sibling lanes and what they do now. One milestone per lane turn.

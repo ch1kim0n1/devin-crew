@@ -64,6 +64,7 @@ scripts/crew-observe.sh     what is a lane really doing; why did it fail
 scripts/crew-qa.sh          mechanical QA over the diff
 scripts/crew-verify.sh      run TASKS.md acceptance commands, check contract freshness
 scripts/crew-router.sh      wake lanes that get mail; exits when the crew is quiet
+scripts/crew-resume.sh      rebuild a run from files (plan, state, next steps) after a reset
 scripts/crew-tasks.sh       keep TASKS.md statuses true (set, lane, next)
 scripts/crew-report.sh      per-lane nudges, kills, elapsed time
 scripts/crew-doctor.sh      preflight: login, model, tools, git state, workspace trust

@@ -10,6 +10,24 @@ Markdown table, one row per task; the last cell is the status (`open`, `running`
 | t2 | tests| tests/*   | t1 | python3 -m unittest | open |
 ```
 
+## PLAN.md
+Written by you the moment the user says go (phase 3), updated when they change the plan. It is what `/devin-crew resume` and `crew-resume.sh` rebuild from after a context reset, so it must stand alone:
+
+```
+approved: 2026-11-10
+goal: <the user's objective in one sentence>
+scope: <what is in, what is out>
+isolation: worktree | shared
+lanes: <n>: <lane (role, owns ...)>, ... and why this many
+autonomy: ask | auto
+git: none | commit | push <remote> <branch>
+budget_minutes: <lane-minutes cap> | none
+milestones:
+- M1: <deliverable> (tasks t1-t3)
+- M2: ...
+current: M1
+```
+
 ## ROSTER.md
 Per lane: job, role, owned files, port/temp path, and for each contract it owns the **consumer lanes** to notify.
 

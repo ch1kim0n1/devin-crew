@@ -54,6 +54,32 @@ d=$(bash "$S/crew-doctor.sh" "$work/nope" 2>&1); rc=$?
 ok "doctor fails on missing folder" '[ "$rc" = 1 ]'
 ok "doctor flags non-git project" 'bash "$S/crew-doctor.sh" "$proj" 2>&1 | grep -q "WARN not a git repo"'
 
+echo "--- resume"
+rp="$work/rproj"; mkdir -p "$rp/.devin-crew/lanes"; rc_="$rp/.devin-crew"
+r=$(bash "$S/crew-resume.sh" "$work/nope-empty" 2>&1 || true)
+mkdir -p "$work/empty"; r=$(bash "$S/crew-resume.sh" "$work/empty")
+ok "no crew: says start fresh" 'printf "%s" "$r" | grep -q "nothing to resume"'
+cat > "$rc_/TASKS.md" <<'T'
+| id | lane | scope | depends | acceptance | status |
+|----|------|-------|---------|------------|--------|
+| r1 | a | a/* | - | true | review |
+| r2 | b | b/* | - | true | failed |
+| r3 | c | c/* | r1 | true | open |
+T
+echo running > "$rc_/lanes/a.status"; echo 999999 > "$rc_/lanes/a.pid"; date +%s > "$rc_/lanes/a.started"
+r=$(bash "$S/crew-resume.sh" "$rp")
+ok "missing PLAN.md is called out" 'printf "%s" "$r" | grep -q "NO PLAN.md"'
+ok "dead process detected" 'printf "%s" "$r" | grep -q "process is gone"'
+ok "review tasks -> verify" 'printf "%s" "$r" | grep -q "1 task(s) in review"'
+ok "failed tasks -> diagnose" 'printf "%s" "$r" | grep -q "1 failed task(s)"'
+printf 'goal: demo\napproved: 2026-11-10\n' > "$rc_/PLAN.md"
+r=$(bash "$S/crew-resume.sh" "$rp")
+ok "plan is printed" 'printf "%s" "$r" | grep -q "goal: demo"'
+printf '| id | lane | scope | depends | acceptance | status |\n|--|--|--|--|--|--|\n| r1 | a | a/* | - | true | done |\n' > "$rc_/TASKS.md"
+echo done > "$rc_/lanes/a.status"; rm -f "$rc_/lanes/a.pid"
+r=$(bash "$S/crew-resume.sh" "$rp")
+ok "all done -> QA next" 'printf "%s" "$r" | grep -q "All tasks done: run milestone QA"'
+
 echo "--- git rights"
 gproj="$work/gproj"; mkdir -p "$gproj"; git -C "$gproj" init -q
 last_prompt() { awk '/^=== call/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$STUB_OUT/prompts.log"; }
