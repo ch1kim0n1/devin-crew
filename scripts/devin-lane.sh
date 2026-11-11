@@ -12,7 +12,7 @@
 # A lane with .devin-crew/lanes/<lane>.workdir (see crew-worktree.sh) runs inside that git worktree.
 # dangerous = Devin's bypass mode (auto-approves all tools), the user's chosen default for every lane.
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 lane=$2; model=$3; task=$4; perm=${5:-dangerous}
 crew="$proj/.devin-crew"
 mkdir -p "$crew/lanes" "$crew/logs"

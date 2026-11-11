@@ -6,7 +6,7 @@
 # Statuses: open | running | review (lane exited ok, not yet verified) | done | failed
 # Row format: | id | lane | scope | depends | acceptance | status |
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 cmd=${2:-}; shift 2 2>/dev/null
 f="$proj/.devin-crew/TASKS.md"
 [ -f "$f" ] || exit 0

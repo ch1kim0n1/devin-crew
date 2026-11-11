@@ -3,7 +3,7 @@
 #   bash crew-status.sh <project>
 # TASKS.md rows end in a status cell: open | running | review | done | failed.
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 crew="$proj/.devin-crew"
 [ -d "$crew" ] || { echo "no crew in $proj"; exit 0; }
 here="$(cd "$(dirname "$0")" && pwd)"

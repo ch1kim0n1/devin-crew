@@ -6,7 +6,7 @@
 # <project> must be a git repo root. Run `add` for every lane before launching any.
 # ponytail: node_modules/.venv/venv at repo root are symlinked into each worktree so tests can run.
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 cmd=$2; lane=${3:-}
 crew="$proj/.devin-crew"; wt="$crew/wt/$lane"
 top=$(git -C "$proj" rev-parse --show-toplevel 2>/dev/null) || { echo "not a git repo: $proj" >&2; exit 1; }

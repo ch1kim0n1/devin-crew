@@ -62,6 +62,7 @@ scripts/crew-worktree.sh    worktree add / merge / remove
 scripts/crew-guard.sh       lock, baseline/regress, snapshot, scope check, restore
 scripts/crew-observe.sh     what is a lane really doing; why did it fail
 scripts/crew-qa.sh          mechanical QA over the diff
+scripts/crew-qa-history.sh  what QA found before; watch list for later milestones
 scripts/crew-verify.sh      run TASKS.md acceptance commands, check contract freshness
 scripts/crew-router.sh      wake lanes that get mail; exits when the crew is quiet
 scripts/crew-resume.sh      rebuild a run from files (plan, state, next steps) after a reset

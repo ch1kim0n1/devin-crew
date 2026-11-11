@@ -80,6 +80,28 @@ echo done > "$rc_/lanes/a.status"; rm -f "$rc_/lanes/a.pid"
 r=$(bash "$S/crew-resume.sh" "$rp")
 ok "all done -> QA next" 'printf "%s" "$r" | grep -q "All tasks done: run milestone QA"'
 
+echo "--- qa history"
+hp="$work/hproj"; mkdir -p "$hp/.devin-crew"
+r=$(bash "$S/crew-qa-history.sh" "$hp" show)
+ok "empty history says so" 'printf "%s" "$r" | grep -q "no findings recorded"'
+ok "bad class rejected" '! bash $S/crew-qa-history.sh $hp add M1 api nonsense HIGH "x" 2>/dev/null'
+ok "bad severity rejected" '! bash $S/crew-qa-history.sh $hp add M1 api stub URGENT "x" 2>/dev/null'
+bash "$S/crew-qa-history.sh" "$hp" add M1 api error-path MED "no timeout handling" >/dev/null
+ok "single MED finding: no watch yet" '[ -z "$(bash $S/crew-qa-history.sh $hp watch)" ]'
+bash "$S/crew-qa-history.sh" "$hp" add M1 tests weak-test HIGH "assertion-free test" >/dev/null
+ok "a HIGH puts its class on the watch list" 'bash $S/crew-qa-history.sh $hp watch | grep -q "class weak-test: seen 1x (HIGH"'
+bash "$S/crew-qa-history.sh" "$hp" add M2 api error-path MED "bad input crashes" >/dev/null
+w=$(bash "$S/crew-qa-history.sh" "$hp" watch)
+ok "repeat class and repeat lane watched" 'printf "%s" "$w" | grep -q "class error-path: seen 2x" && printf "%s" "$w" | grep -q "lane api: 2 findings"'
+printf '2026-11-10 10:00:00 tests NUDGE 1/2 on session x after: STALLED\n' > "$hp/.devin-crew/events.log"
+ok "rescued lane watched from events.log" 'bash $S/crew-qa-history.sh $hp watch | grep -q "lane tests: needed rescue 1x"'
+ok "show summarizes counts" 'bash $S/crew-qa-history.sh $hp show | grep -q "3 finding(s) over 2 milestone(s)"'
+
+echo "--- symlinked paths"
+wp="$work/wproj"; mkdir -p "$wp"; git -C "$wp" init -q; git -C "$wp" -c user.name=t -c user.email=t@t commit -q --allow-empty -m i
+ok "worktree add works under a symlinked temp path" 'bash $S/crew-worktree.sh $wp add w1 >/dev/null 2>&1 && [ -d "$(cd $wp && pwd -P)/.devin-crew/wt/w1" ]'
+bash "$S/crew-worktree.sh" "$wp" remove w1 >/dev/null 2>&1
+
 echo "--- git rights"
 gproj="$work/gproj"; mkdir -p "$gproj"; git -C "$gproj" init -q
 last_prompt() { awk '/^=== call/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$STUB_OUT/prompts.log"; }

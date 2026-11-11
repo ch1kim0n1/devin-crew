@@ -11,7 +11,7 @@
 # `check` has two modes: if any lane has a worktree (lanes/<lane>.workdir) each worktree is checked against its
 # own lane's scope; otherwise the shared tree is compared with the snapshot against all scopes.
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 cmd=$2; shift 2
 crew="$proj/.devin-crew"; mkdir -p "$crew"
 cd "$proj" || exit 2

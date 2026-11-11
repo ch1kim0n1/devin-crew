@@ -2,7 +2,7 @@
 # Per-lane effort table from events.log: launches, resumes, nudges, hung-tool kills, stalls, elapsed, last status.
 #   bash crew-report.sh <project>
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 log="$proj/.devin-crew/events.log"
 [ -s "$log" ] || { echo "no events yet"; exit 0; }
 printf "%-10s %6s %7s %6s %5s %6s %7s  %s\n" lane launch resume nudge hung stall secs "last status"

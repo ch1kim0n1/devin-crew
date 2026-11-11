@@ -7,7 +7,7 @@
 # Exit 1 if any acceptance fails/times out or any lane built against a stale contract.
 # env: CREW_VERIFY_SECS=300 per-command timeout
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 only=${2:-}
 crew="$proj/.devin-crew"; secs=${CREW_VERIFY_SECS:-300}
 [ -d "$crew" ] || { echo "no crew in $proj"; exit 0; }

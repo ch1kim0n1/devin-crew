@@ -8,7 +8,7 @@
 # (~/.local/share/devin/cli/logs/*_<pid>.log), the process tree, file mtimes in the lane's workdir, the lane's own log.
 # Never reads credentials. Thresholds (seconds): CREW_EMPTY_STALL_SECS=120 CREW_MODEL_STALL_SECS=420 CREW_TOOL_STALL_SECS=1200
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 crew="$proj/.devin-crew"
 DB=${DEVIN_SESSIONS_DB:-$HOME/.local/share/devin/cli/sessions.db}
 LOGS="$(dirname "$DB")/logs"

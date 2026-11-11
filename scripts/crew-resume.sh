@@ -3,7 +3,7 @@
 # and say what to do next. Changes nothing.
 #   bash crew-resume.sh <project>
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 crew="$proj/.devin-crew"
 here="$(cd "$(dirname "$0")" && pwd)"
 [ -d "$crew" ] || { echo "no crew in $proj: nothing to resume. Start with /devin-crew <goal>."; exit 0; }

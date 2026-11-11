@@ -9,7 +9,7 @@
 #   ROUTER-TIMEOUT                     CREW_ROUTER_MAX_SECS (7200) passed
 # Only lanes with status `done` or `failed(<number>)` are woken; stalled/timeout lanes need your judgment first.
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 poll=${2:-15}; max=${CREW_ROUTER_MAX_SECS:-7200}
 here="$(cd "$(dirname "$0")" && pwd)"
 crew="$proj/.devin-crew"; mkdir -p "$crew/lanes" "$crew/logs"

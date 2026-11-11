@@ -73,6 +73,11 @@
 | Same helper rewritten instead of reused | Duplication; read the surrounding code. |
 | Docs describe things the code does not do | Docs written from the plan, not the code. |
 
+## H. Learn from earlier milestones
+
+- [ ] From milestone 2 on, run `bash S/crew-qa-history.sh <project> show` first (`crew-qa.sh` also prints the watch list). Every WATCH item gets a deliberate check in this milestone, not a glance.
+- [ ] After the verdict, record each real finding: `bash S/crew-qa-history.sh <project> add <milestone> <lane> <class> <HIGH|MED|LOW> "<text>"` (classes: stub, skipped-test, weak-test, error-path, missed-requirement, stale-contract, scope, security, docs-drift, integration, other). Rescued lanes (nudge, hung-tool kill) are picked up from `events.log` automatically.
+
 ## Verdict and the QA.md entry
 
 ```

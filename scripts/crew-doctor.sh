@@ -3,7 +3,7 @@
 #   bash crew-doctor.sh <project> [--trust]
 # Prints OK / WARN / FAIL lines, each FAIL/WARN with the fix. Exit 1 if any FAIL.
 set -u
-proj=$(cd "${1:-.}" 2>/dev/null && pwd) || { echo "FAIL project folder does not exist: ${1:-.}"; exit 1; }
+proj=$(cd "${1:-.}" 2>/dev/null && pwd -P) || { echo "FAIL project folder does not exist: ${1:-.}"; exit 1; }
 trust=0; [ "${2:-}" = "--trust" ] && trust=1
 model=swe-2-flash-high
 bad=0

@@ -4,7 +4,7 @@
 #   bash lane-msg.sh <project> read <lane>                  print unread mail for <lane>, advance its cursor
 #   bash lane-msg.sh <project> pending                      "<lane> <status> <unread>" for every lane with unread mail
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 cmd=$2; shift 2
 crew="$proj/.devin-crew"; inbox="$crew/inbox"
 mkdir -p "$inbox"

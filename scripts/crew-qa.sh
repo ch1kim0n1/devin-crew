@@ -4,7 +4,7 @@
 #   bash crew-qa.sh <project>
 # Git repo: diff of the working tree vs HEAD plus untracked files. Otherwise: diff vs .devin-crew/snapshot.tgz.
 set -u
-proj=$(cd "$1" && pwd) || exit 2
+proj=$(cd "$1" && pwd -P) || exit 2
 cd "$proj" || exit 2
 crew="$proj/.devin-crew"
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
@@ -100,5 +100,7 @@ junk=$(grep -E '(\.DS_Store|\.pyc|\.log|\.swp|\.orig|\.rej|~)$' "$work/changed.t
 big=$(cut -d: -f1 "$work/added.txt" | sort | uniq -c | awk '$1>800{print $2" ("$1" lines)"}')
 [ -n "$big" ] && { note MED "very large additions (generated or pasted?)"; echo "$big" | sed 's/^/      /'; }
 
+hist=$(bash "$(dirname "$0")/crew-qa-history.sh" "$proj" watch 2>/dev/null)
+[ -n "$hist" ] && { echo "WATCH (from earlier milestones, check these first):"; echo "$hist" | sed 's/^/  /'; }
 echo "crew-qa: HIGH=$high MED=$med  (a clean run proves little; run the manual checklist)"
 [ "$high" -eq 0 ]
