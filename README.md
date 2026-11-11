@@ -41,6 +41,7 @@ Restart Claude Code (or start a new session).
 | `/devin-crew` | Heads-up only. Claude acknowledges the mode and asks for your goal. Runs nothing. |
 | `/devin-crew <goal>` | Recon, proposal, plan with you, then execution and QA |
 | `/devin-crew status` | Live state of each lane |
+| `devin-lane.sh --print ...` | Dry run: the exact prompt a lane would get, nothing launched |
 | `/devin-crew resume` | Pick up a half-done crew from `.devin-crew/` |
 
 To let Claude skip the wait for your go: tell it to decide on its own (it writes `AUTONOMY=auto`). It still does recon, shows the plan, and does QA.

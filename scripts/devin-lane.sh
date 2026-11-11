@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Run (or resume) one Devin "lane" headless. Run me with Bash run_in_background=true.
-# usage: bash devin-lane.sh <project_dir> <lane> <model|-> <task_file|-> [permission_mode=dangerous]
+# usage: bash devin-lane.sh [--print] <project_dir> <lane> <model|-> <task_file|-> [permission_mode=dangerous]
+#   --print        dry run: show the exact prompt, rights and command this launch would use; starts nothing, changes nothing
 #   model "-"      reuse the model this lane was first launched with (always swe-2-flash-high)
 #   task_file "-"  wake-up: the lane only gets "you have new mail"
 # env: CREW_ROLE=<name>        first launch only: append templates/roles/<name>.md to the preamble
@@ -12,20 +13,23 @@
 # A lane with .devin-crew/lanes/<lane>.workdir (see crew-worktree.sh) runs inside that git worktree.
 # dangerous = Devin's bypass mode (auto-approves all tools), the user's chosen default for every lane.
 set -u
+dry=0; if [ "${1:-}" = "--print" ]; then dry=1; shift; fi
 proj=$(cd "$1" && pwd -P) || exit 2
 lane=$2; model=$3; task=$4; perm=${5:-dangerous}
 crew="$proj/.devin-crew"
-mkdir -p "$crew/lanes" "$crew/logs"
+[ "$dry" -eq 1 ] || mkdir -p "$crew/lanes" "$crew/logs"
 sid_file="$crew/lanes/$lane.sid"; model_file="$crew/lanes/$lane.model"
 skill_dir=$(cd "$(dirname "$0")/.." && pwd)
 msg="$skill_dir/scripts/lane-msg.sh"; obs="$skill_dir/scripts/crew-observe.sh"
 workdir="$proj"; [ -f "$crew/lanes/$lane.workdir" ] && workdir=$(cat "$crew/lanes/$lane.workdir")
-ev() { echo "$(date '+%F %T') $lane $*" >> "$crew/events.log"; }
+ev() { [ "$dry" -eq 1 ] || echo "$(date '+%F %T') $lane $*" >> "$crew/events.log"; }
 
 # Lane-minutes budget (crew-budget.sh): refuse to start once exceeded, unless the user said to go on.
 if b=$(bash "$skill_dir/scripts/crew-budget.sh" "$proj" check); then :; else
   brc=$?
-  if [ "$brc" -eq 2 ] && [ "${CREW_BUDGET_OVERRIDE:-0}" != 1 ]; then
+  if [ "$brc" -eq 2 ] && [ "${CREW_BUDGET_OVERRIDE:-0}" != 1 ] && [ "$dry" -eq 1 ]; then
+    echo "WOULD REFUSE (budget): $b" >&2
+  elif [ "$brc" -eq 2 ] && [ "${CREW_BUDGET_OVERRIDE:-0}" != 1 ]; then
     echo "$b" >&2; echo "$(date '+%F %T') $lane BUDGET exceeded: launch refused" >> "$crew/events.log"; exit 4
   fi
   echo "$b" >&2
@@ -35,20 +39,22 @@ if [ "$model" = "-" ]; then model=$(cat "$model_file" 2>/dev/null) || model=swe-
 if [ "$model" != "swe-2-flash-high" ]; then
   echo "model '$model' not allowed, using swe-2-flash-high" >&2; model=swe-2-flash-high
 fi
-echo "$model" > "$model_file"
+[ "$dry" -eq 1 ] || echo "$model" > "$model_file"
 
 n=0; for f in "$crew/logs/$lane".[0-9]*.log; do [ -e "$f" ] && n=$((n + 1)); done
 log="$crew/logs/$lane.$((n + 1)).log"
 
 body=""; [ "$task" != "-" ] && body=$(cat "$task")
 if [ -f "$sid_file" ]; then
-  resume=(-r "$(cat "$sid_file")")
-  mail=$(bash "$msg" "$proj" read "$lane")
+  resume=(-r "$(cat "$sid_file")"); mode="resume of session $(cat "$sid_file")"; gitmode="(unchanged: a resumed lane keeps the rights it was launched with)"
+  if [ "$dry" -eq 1 ]; then   # peek only: reading would advance the lane's mail cursor
+    un=$(bash "$msg" "$proj" pending | awk -v l="$lane" '$1==l{print $3}'); mail="[dry run: ${un:-0} unread message(s) would be inserted here]"
+  else mail=$(bash "$msg" "$proj" read "$lane"); fi
   [ "$task" = "-" ] && body="You were woken because you have new mail. Handle every message, finish any work it implies, then append an updated DONE line to $crew/BOARD.md and reply with the same summary."
   prompt=$(printf 'NEW MAIL (from other lanes):\n%s\n\n%s' "$mail" "$body")
   ev "resume session $(cat "$sid_file")"
 else
-  resume=()
+  resume=(); mode="NEW session"
   [ "$task" = "-" ] && { echo "first launch needs a task file" >&2; exit 2; }
   t=$(cat "$skill_dir/templates/preamble.md")
   t=${t//\{\{LANE\}\}/$lane}; t=${t//\{\{PROJECT\}\}/$proj}; t=${t//\{\{WORKDIR\}\}/$workdir}
@@ -76,6 +82,15 @@ else
   ev "launch ${CREW_ROLE:-no-role} in $workdir"
 fi
 
+if [ "$dry" -eq 1 ]; then
+  echo "=== DRY RUN: nothing launched, nothing changed ==="
+  echo "lane: $lane | $mode | model: $model | permission mode: $perm | role: ${CREW_ROLE:-none} | git rights: $gitmode${target:+ ($target)}"
+  echo "runs in: $workdir | wall-clock cap per turn: ${CREW_MAX_SECS:-2700}s | stall retries: ${CREW_STALL_RETRIES:-2}"
+  echo "command: devin -p <prompt below> --model $model --permission-mode $perm --export $crew/lanes/$lane.export.json ${resume[*]:-}"
+  echo "=== PROMPT (exactly what the lane receives) ==="
+  printf '%s\n' "$prompt"
+  exit 0
+fi
 echo $$ > "$crew/lanes/$lane.pid"; date +%s > "$crew/lanes/$lane.started"
 echo running > "$crew/lanes/$lane.status"
 [ "$task" != "-" ] && bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" "open|failed|review" running

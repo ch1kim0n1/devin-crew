@@ -123,6 +123,19 @@ ok "router will not wake lanes over budget" 'printf "%s" "$r" | grep -q "QUIESCE
 bash "$S/crew-budget.sh" "$bp" set none >/dev/null
 ok "set none removes the cap" 'bash $S/crew-budget.sh $bp check | grep -q "none set"'
 
+echo "--- dry run (--print)"
+dp="$work/dproj"; mkdir -p "$dp"; git -C "$dp" init -q
+calls=$(cat "$STUB_OUT/count")
+d=$(CREW_ROLE=tests CREW_GIT=commit bash "$S/devin-lane.sh" --print "$dp" dl swe-2-flash-high "$work/task.md" 2>&1)
+ok "print shows rights, role and task" 'printf "%s" "$d" | grep -q "DRY RUN" && printf "%s" "$d" | grep -q "NEW session" && printf "%s" "$d" | grep -q "git rights: commit" && printf "%s" "$d" | grep -q "build the thing"'
+ok "print launches nothing and writes nothing" '[ "$(cat $STUB_OUT/count)" = "$calls" ] && [ ! -e "$dp/.devin-crew" ]'
+mkdir -p "$dp/.devin-crew/lanes"; echo "stub-session-9" > "$dp/.devin-crew/lanes/dl.sid"
+bash "$S/lane-msg.sh" "$dp" send x dl "peek test" >/dev/null
+d=$(bash "$S/devin-lane.sh" --print "$dp" dl - - 2>&1)
+ok "print of a wake shows the unread mail count" 'printf "%s" "$d" | grep -q "resume of session stub-session-9" && printf "%s" "$d" | grep -q "1 unread message"'
+ok "print does not consume mail" '[ "$(bash $S/lane-msg.sh $dp pending)" = "dl not-started 1" ]'
+ok "print writes no events" '[ ! -e "$dp/.devin-crew/events.log" ]'
+
 echo "--- git rights"
 gproj="$work/gproj"; mkdir -p "$gproj"; git -C "$gproj" init -q
 last_prompt() { awk '/^=== call/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$STUB_OUT/prompts.log"; }
