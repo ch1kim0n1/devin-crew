@@ -55,7 +55,7 @@ else
     echo "CREW_GIT=push needs CREW_GIT_TARGET=\"<remote> <branch>\"; falling back to commit only" >&2; gitmode=commit; fi
   case "$gitmode" in
     commit|push)
-      g="You MAY commit your own work, nothing else. Stage explicit paths inside your owned scope (git add -- <paths>; never git add -A or git add .), commit with a message starting [crew:$lane], and only after your verify command passes. Another lane may hold .git/index.lock: wait 5 seconds and retry up to 6 times, never delete it. Never amend, rebase, reset, stash, checkout or force anything."
+      g="You MAY commit your own work, nothing else. Stage explicit paths inside your owned scope (git add -- <paths>; never git add -A or git add .), commit with a message starting [crew:$lane], and only after your verify command passes. Commit at each finished, verified unit of work (a feature, a file group, a fix), not one big commit at the end and not every few lines. Another lane may hold .git/index.lock: wait 5 seconds and retry up to 6 times, never delete it. Never amend, rebase, reset, stash, checkout or force anything."
       if [ "$gitmode" = push ]; then
         g="$g After your last commit push once with: git push $target. If rejected as non-fast-forward, run git pull --rebase $target once, rerun your verify command, and push again; on any conflict or a second rejection stop and post BLOCKED. Never force-push and never push to any other remote or branch."
       else g="$g Do not push."; fi;;
