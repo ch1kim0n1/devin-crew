@@ -86,6 +86,23 @@ bash "$S/lane-msg.sh" "$proj" send api bad "you there" >/dev/null
 r=$(CREW_ROUTER_MAX_SECS=60 bash "$S/crew-router.sh" "$proj" 1)
 ok "router flags unwakeable lane" 'printf "%s" "$r" | grep -q "^QUIESCENT-WITH-STUCK-MAIL bad(failed(timeout),1)"'
 
+echo "--- task status"
+cat > "$crew/TASKS.md" <<'T'
+| id | lane | scope | depends | acceptance | status |
+|----|------|-------|---------|------------|--------|
+| s1 | api  | src/* | -  | true | open |
+| s2 | bad2 | x/* | s1 | true | open |
+| s3 | docs | d/* | s1,s2 | true | open |
+T
+ok "next: only the unblocked task" '[ "$(bash $S/crew-tasks.sh $proj next)" = "s1 api" ]'
+bash "$S/devin-lane.sh" "$proj" api - "$work/task.md" >/dev/null 2>&1
+ok "lane exit ok -> task review" 'grep -q "| s1 .*| review |" $crew/TASKS.md'
+bash "$S/crew-tasks.sh" "$proj" set s1 done
+ok "next: s2 unblocked after s1 done" '[ "$(bash $S/crew-tasks.sh $proj next)" = "s2 bad2" ]'
+STUB_EXIT=3 bash "$S/devin-lane.sh" "$proj" bad2 - "$work/task.md" >/dev/null 2>&1
+ok "lane exit nonzero -> task failed" 'grep -q "| s2 .*| failed |" $crew/TASKS.md'
+ok "set leaves other rows alone" 'grep -q "| s3 .*| open |" $crew/TASKS.md && grep -q "| s1 .*| done |" $crew/TASKS.md'
+
 echo "--- verify"
 cat > "$crew/TASKS.md" <<'T'
 | id | lane | scope | depends | acceptance | status |
@@ -104,6 +121,7 @@ ok "verify exits 1 on problems" '[ "$rc" = 1 ]'
 ok "passing acceptance reported" 'printf "%s" "$v" | grep -q "^PASS t1 api"'
 ok "failing acceptance shows output" 'printf "%s" "$v" | grep -q "^FAIL t2 tests (exit 1)" && printf "%s" "$v" | grep -q boom'
 ok "not-started lane skipped" 'printf "%s" "$v" | grep -q "^SKIP t4 ghost: lane not started"'
+ok "verify writes status back" 'grep -q "| t2 .*| failed |" $crew/TASKS.md && grep -q "| t1 .*| done |" $crew/TASKS.md'
 ok "dash acceptance skipped" 'printf "%s" "$v" | grep -q "^SKIP t3 api"'
 ok "stale contract caught" 'printf "%s" "$v" | grep -q "^STALE-CONTRACT api: built against v1, CONTRACTS.md is v2"'
 ok "fresh contract ok" 'printf "%s" "$v" | grep -q "^CONTRACT-OK tests: v2"'

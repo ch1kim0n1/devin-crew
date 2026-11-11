@@ -70,6 +70,7 @@ fi
 
 echo $$ > "$crew/lanes/$lane.pid"; date +%s > "$crew/lanes/$lane.started"
 echo running > "$crew/lanes/$lane.status"
+[ "$task" != "-" ] && bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" "open|failed|review" running
 cd "$workdir" || exit 2
 max=${CREW_MAX_SECS:-2700}; retries=${CREW_STALL_RETRIES:-2}; t0=$(date +%s); start=$t0
 : > "$log"
@@ -129,6 +130,9 @@ elif [ -n "$stall_reason" ]; then st="failed(stalled: ${stall_reason%%:*})"
 elif [ "$code" -eq 0 ]; then st="done"
 else st="failed($code)"; fi
 echo "$st" > "$crew/lanes/$lane.status"
+if [ "$task" != "-" ]; then   # a lane that exited ok awaits verification; a failed one is failed
+  if [ "$st" = "done" ]; then bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" running review; else bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" running failed; fi
+fi
 rm -f "$crew/lanes/$lane.pid"
 ev "exit status=$st session=${sid:-unknown} elapsed=$(( $(date +%s) - t0 )) nudges=$attempt"
 echo "lane=$lane status=$st session=${sid:-unknown} log=$log"

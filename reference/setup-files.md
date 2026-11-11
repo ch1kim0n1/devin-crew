@@ -1,7 +1,7 @@
 # Coordination files (`.devin-crew/` in the project)
 
 ## TASKS.md
-Markdown table, one row per task; the last cell is the status (`open`, `running`, `done`, `failed`). `crew-status.sh` counts these; `crew-verify.sh` runs the acceptance cell (a shell command from the project root; no `|` inside; `-` skips).
+Markdown table, one row per task; the last cell is the status (`open`, `running`, `review`, `done`, `failed`), maintained by the scripts: `devin-lane.sh` sets a lane's open/failed/review tasks to `running` at launch and to `review` (exited ok, unverified) or `failed` at exit; `crew-verify.sh` sets `done` on a passing acceptance and `failed` otherwise; `crew-tasks.sh <project> set <id> <status>` is for manual calls (tasks with no acceptance command: you mark `done` after your own check) and `crew-tasks.sh <project> next` lists open tasks that can launch now (deps done, lane idle). `crew-status.sh` counts these; `crew-verify.sh` runs the acceptance cell (a shell command from the project root; no `|` inside; `-` skips).
 
 ```
 | id | lane | scope | depends | acceptance | status |

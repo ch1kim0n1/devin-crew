@@ -41,9 +41,10 @@ if [ -f "$crew/TASKS.md" ]; then
     [ -f "$crew/lanes/$lane.status" ] || { say "SKIP $id $lane: lane not started"; continue; }
     if lane_running "$lane"; then say "SKIP $id $lane: lane still running"; continue; fi
     run_limited "$secs" "$acc" "$out"; rc=$?
-    if [ "$rc" -eq 0 ]; then say "PASS $id $lane: $acc"
-    elif [ "$rc" -eq 124 ]; then bad=1; say "TIMEOUT $id $lane (>${secs}s): $acc"; tail -n 5 "$out" | sed 's/^/    /' | tee -a "$log"
-    else bad=1; say "FAIL $id $lane (exit $rc): $acc"; tail -n 5 "$out" | sed 's/^/    /' | tee -a "$log"; fi
+    tasks="$(cd "$(dirname "$0")" && pwd)/crew-tasks.sh"
+    if [ "$rc" -eq 0 ]; then bash "$tasks" "$proj" set "$id" "done"; say "PASS $id $lane: $acc"
+    elif [ "$rc" -eq 124 ]; then bad=1; bash "$tasks" "$proj" set "$id" failed; say "TIMEOUT $id $lane (>${secs}s): $acc"; tail -n 5 "$out" | sed 's/^/    /' | tee -a "$log"
+    else bad=1; bash "$tasks" "$proj" set "$id" failed; say "FAIL $id $lane (exit $rc): $acc"; tail -n 5 "$out" | sed 's/^/    /' | tee -a "$log"; fi
   done < "$crew/TASKS.md"
   rm -f "$out"
 else say "no TASKS.md: acceptance checks skipped"; fi
