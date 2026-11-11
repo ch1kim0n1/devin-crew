@@ -28,6 +28,7 @@ while :; do
     if [ "$lane" = orchestrator ]; then orch=$n; continue; fi
     case "$st" in
       done|failed\([0-9]*\))
+        if bash "$here/crew-budget.sh" "$proj" check >/dev/null 2>&1; [ $? -eq 2 ]; then stuck="$stuck $lane(budget-exceeded,$n)"; continue; fi
         echo waking > "$crew/lanes/$lane.status"; ev "wake $lane ($n unread, was $st)"
         nohup bash "$here/devin-lane.sh" "$proj" "$lane" - - >> "$crew/logs/router.log" 2>&1 &
         woke=$((woke + 1)); running=$((running + 1));;

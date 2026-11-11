@@ -68,6 +68,7 @@ scripts/crew-router.sh      wake lanes that get mail; exits when the crew is qui
 scripts/crew-resume.sh      rebuild a run from files (plan, state, next steps) after a reset
 scripts/crew-tasks.sh       keep TASKS.md statuses true (set, lane, next)
 scripts/crew-report.sh      per-lane nudges, kills, elapsed time
+scripts/crew-budget.sh      lane-minutes cap; launches refused when exceeded
 scripts/crew-doctor.sh      preflight: login, model, tools, git state, workspace trust
 scripts/crew-status.sh      one-screen status
 scripts/lane-msg.sh         mail between lanes

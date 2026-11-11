@@ -22,6 +22,14 @@ msg="$skill_dir/scripts/lane-msg.sh"; obs="$skill_dir/scripts/crew-observe.sh"
 workdir="$proj"; [ -f "$crew/lanes/$lane.workdir" ] && workdir=$(cat "$crew/lanes/$lane.workdir")
 ev() { echo "$(date '+%F %T') $lane $*" >> "$crew/events.log"; }
 
+# Lane-minutes budget (crew-budget.sh): refuse to start once exceeded, unless the user said to go on.
+if b=$(bash "$skill_dir/scripts/crew-budget.sh" "$proj" check); then :; else
+  brc=$?
+  if [ "$brc" -eq 2 ] && [ "${CREW_BUDGET_OVERRIDE:-0}" != 1 ]; then
+    echo "$b" >&2; echo "$(date '+%F %T') $lane BUDGET exceeded: launch refused" >> "$crew/events.log"; exit 4
+  fi
+  echo "$b" >&2
+fi
 if [ "$model" = "-" ]; then model=$(cat "$model_file" 2>/dev/null) || model=swe-2-flash-high; fi
 # User's standing rule (2026-11-09): lanes ALWAYS run swe-2-flash-high. Anything else is coerced.
 if [ "$model" != "swe-2-flash-high" ]; then

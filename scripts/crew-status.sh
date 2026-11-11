@@ -15,6 +15,7 @@ else echo "tasks: no TASKS.md"; fi
 [ -f "$crew/LOCK" ] && echo "lock: held $(( $(date +%s) - $(head -1 "$crew/LOCK") ))s ago"
 [ -f "$crew/baseline.cmd" ] && echo "baseline: exit $(cat "$crew/baseline.exit") for: $(cat "$crew/baseline.cmd")"
 
+bash "$here/crew-budget.sh" "$proj" check | head -1
 pending=$(bash "$here/lane-msg.sh" "$proj" pending)
 for f in "$crew"/lanes/*.status; do
   [ -e "$f" ] || { echo "lanes: none"; break; }

@@ -23,7 +23,7 @@ Every lane runs `swe-2-flash-high` (script coerces anything else): free, weaker 
 ## Phases
 
 1. **Recon** (read-only: no devin, no script, no files). Study the project, restate the user's objective, find the scope, find how to verify. Ask the user if the objective is ambiguous. Checklist: `reference/recon-and-plan.md`.
-2. **Proposal.** In chat: objective and scope, milestones with tasks, **how many Devins and why** (never more lanes than independent file clusters; cap 5; small or serial work gets 1-2), contracts, isolation mode, QA plan, risks, open questions, your single recommended plan.
+2. **Proposal.** In chat: objective and scope, milestones with tasks, **how many Devins and why**, plus a lane-minutes budget (parallel lanes add up; a small task is tens of minutes, a big one a few hours) that you set with `bash S/crew-budget.sh <project> set <minutes>` on the go (never more lanes than independent file clusters; cap 5; small or serial work gets 1-2), contracts, isolation mode, QA plan, risks, open questions, your single recommended plan.
 3. **Plan with the user.** Revise until they say go. Their edits win; flag risk, then obey. Nothing launches and no `.devin-crew/` exists before the go. `AUTONOMY` file `auto` (set only by the user's own words: "you pick", "stop asking") skips waiting for the go, never phases 1, 2 or 5. Mid-run changes to the plan (more lanes, wider scope, dropped milestone) go back to the user first. The moment they say go, write the approved plan to `.devin-crew/PLAN.md` (format: `reference/setup-files.md`) and keep it current: it is all that survives a context reset.
 4. **Execute**, per milestone:
    1. First milestone only: preflight `bash S/crew-doctor.sh <project> --trust` (login, model, tools, git state, workspace trust; any FAIL -> tell the user the fix and stop; "not trusted" -> the user runs `devin` once there; never bypass trust; the check deletes only its own session), `crew-guard.sh <project> lock`, write the coordination files (`reference/setup-files.md`), `crew-guard.sh <project> baseline "<cmd>"`, isolation (`reference/guardrails.md`: worktrees for a git repo root, else `snapshot`).
@@ -35,7 +35,7 @@ Every lane runs `swe-2-flash-high` (script coerces anything else): free, weaker 
 
 ## Stop and ask the user only if
 
-A decision is theirs (product direction, scope, number of workers), an action is destructive or outward-facing (push, deploy, delete, restoring a whole snapshot), trust must be granted, the plan must change, or the same task failed 3 times. Everything else: keep going silently.
+A decision is theirs (product direction, scope, number of workers), an action is destructive or outward-facing (push, deploy, delete, restoring a whole snapshot), trust must be granted, the plan must change, the budget is exceeded (launches are refused until they say raise it; then `CREW_BUDGET_OVERRIDE=1` or `crew-budget.sh set`), or the same task failed 3 times. Everything else: keep going silently.
 
 ## Rules
 

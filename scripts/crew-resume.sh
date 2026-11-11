@@ -19,6 +19,7 @@ echo "=== NEXT ==="
 n=0; say() { n=$((n + 1)); echo "$n. $*"; }
 
 pending=$(bash "$here/lane-msg.sh" "$proj" pending)
+bash "$here/crew-budget.sh" "$proj" check >/dev/null 2>&1; [ $? -eq 2 ] && say "Budget exceeded: do not launch anything; ask the user whether to raise it (crew-budget.sh $proj set <minutes>) or stop."
 echo "$pending" | awk '$1=="orchestrator"{f=1} END{exit !f}' && say "Mail for you: bash $here/lane-msg.sh $proj read orchestrator (answer from CONTRACTS.md, bump version if a contract changes)"
 
 running=0

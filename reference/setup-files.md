@@ -45,4 +45,6 @@ First line `version: 1`. Every shared interface (signatures, API shapes, file fo
 ## BOARD.md
 Starts empty. Public log of all lane mail plus the `DONE` lines (`DONE <lane>: files changed: ... | verified: ... | contracts: v<N> | open issues: ...`; `crew-verify.sh` compares `v<N>` with the version line of CONTRACTS.md). Lanes append only.
 
+`BUDGET`: lane-minutes cap (one number), written by `crew-budget.sh set`. `devin-lane.sh` refuses to launch and `crew-router.sh` refuses to wake lanes once the sum of all lane run times (events.log `elapsed=` plus lanes running now) reaches it.
+
 Also created automatically: `inbox/`, `lanes/` (status, pid, sid, model, workdir), `logs/`, `prompts/`, `wt/`, `snapshot.*`, `baseline.*`, `LOCK`. Add `.devin-crew/` to the project's ignore file (`crew-worktree.sh add` does it for `.git/info/exclude`).

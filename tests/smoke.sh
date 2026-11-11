@@ -102,6 +102,27 @@ wp="$work/wproj"; mkdir -p "$wp"; git -C "$wp" init -q; git -C "$wp" -c user.nam
 ok "worktree add works under a symlinked temp path" 'bash $S/crew-worktree.sh $wp add w1 >/dev/null 2>&1 && [ -d "$(cd $wp && pwd -P)/.devin-crew/wt/w1" ]'
 bash "$S/crew-worktree.sh" "$wp" remove w1 >/dev/null 2>&1
 
+echo "--- budget"
+bp="$work/bproj"; mkdir -p "$bp/.devin-crew/lanes"; bc="$bp/.devin-crew"
+ok "no budget: fine" 'bash $S/crew-budget.sh $bp check | grep -q "none set"'
+bash "$S/crew-budget.sh" "$bp" set 10 >/dev/null
+printf '2026-11-10 10:00:00 api exit status=done session=x elapsed=60 nudges=0\n' > "$bc/events.log"
+ok "under 80%: exit 0" 'bash $S/crew-budget.sh $bp check >/dev/null; [ $? -eq 0 ]'
+printf '2026-11-10 10:00:00 api exit status=done session=x elapsed=480 nudges=0\n' > "$bc/events.log"
+ok "at 80%: warns, exit 1" 'bash $S/crew-budget.sh $bp check >/dev/null; [ $? -eq 1 ]'
+printf '2026-11-10 10:00:00 api exit status=done session=x elapsed=400 nudges=0\n2026-11-10 10:10:00 ui exit status=done session=y elapsed=300 nudges=0\n' > "$bc/events.log"
+ok "over budget: exit 2 and says so" 'r=$(bash $S/crew-budget.sh $bp check); [ $? -eq 2 ] && printf "%s" "$r" | grep -q "BUDGET EXCEEDED"'
+calls_before=$(cat "$STUB_OUT/count")
+bash "$S/devin-lane.sh" "$bp" api - "$work/task.md" >/dev/null 2>&1; rc=$?
+ok "lane launch refused when exceeded" '[ "$rc" = 4 ] && [ "$(cat $STUB_OUT/count)" = "$calls_before" ] && [ ! -f $bc/lanes/api.status ]'
+CREW_BUDGET_OVERRIDE=1 bash "$S/devin-lane.sh" "$bp" api swe-2-flash-high "$work/task.md" >/dev/null 2>&1
+ok "override lets it run" '[ "$(cat $bc/lanes/api.status)" = "done" ]'
+bash "$S/lane-msg.sh" "$bp" send ui api "hi" >/dev/null
+r=$(CREW_ROUTER_MAX_SECS=30 bash "$S/crew-router.sh" "$bp" 1)
+ok "router will not wake lanes over budget" 'printf "%s" "$r" | grep -q "QUIESCENT-WITH-STUCK-MAIL api(budget-exceeded,1)"'
+bash "$S/crew-budget.sh" "$bp" set none >/dev/null
+ok "set none removes the cap" 'bash $S/crew-budget.sh $bp check | grep -q "none set"'
+
 echo "--- git rights"
 gproj="$work/gproj"; mkdir -p "$gproj"; git -C "$gproj" init -q
 last_prompt() { awk '/^=== call/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$STUB_OUT/prompts.log"; }
