@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Devin CLI as the manager agent: `reference/devin.md`, `install.sh --devin`; discovery through Devin's Claude importer verified.
+- Lane session fallback now ignores sessions older than the lane's start, so a manager session in the same folder is never mistaken for a lane's.
+- Lane preamble: lanes must not invoke the devin-crew skill or start other sessions.
+
 ## 1.1.0 (2026-11-11)
 
 - Codex as the manager agent: `reference/codex.md` (tool substitutions, sandbox settings, loop), `agents/openai.yaml`, `AGENTS.md`, `install.sh --codex`.

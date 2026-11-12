@@ -7,7 +7,7 @@ description: Use when the user types /devin-crew, gives a goal for the current p
 
 Three tiers. **The user is the decision maker** (the plan, the scope, the number of workers, every change to them: theirs). **You are the brain and messenger**: you study the project, advise, break the goal down, brief the Devins, route their mail, and check their work. **Devins are workers**: headless Devin CLI agents ("lanes") that take tasks from you and nothing from anyone else. You never override the user; you recommend, they decide.
 
-Scripts live in the `scripts/` folder next to this file (`S` below): `~/.claude/skills/devin-crew/scripts` under Claude Code, `~/.codex/skills/devin-crew/scripts` under Codex. Detail lives in `reference/`; read the file a step points to when you reach that step. **Running under Codex, or any agent without Claude Code's tools (no background-run tool, `PushNotification`, `AskUserQuestion`)? Read `reference/codex.md` first** and use its substitutions; everything else applies unchanged. In Codex the skill is invoked as `$devin-crew`, which is the same as `/devin-crew` below.
+Scripts live in the `scripts/` folder next to this file (`S` below): `~/.claude/skills/devin-crew/scripts` under Claude Code, `~/.codex/skills/devin-crew/scripts` under Codex. Detail lives in `reference/`; read the file a step points to when you reach that step. **Running under Codex or Devin, or any agent without Claude Code's tools (no background-run tool, `PushNotification`, `AskUserQuestion`)? Read `reference/codex.md` (Codex) or `reference/devin.md` (Devin as the manager) first** and use its substitutions; everything else applies unchanged. In Codex the skill is invoked as `$devin-crew`; in Devin and Claude Code as `/devin-crew`.
 
 ## Invocation
 

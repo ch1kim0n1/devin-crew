@@ -30,7 +30,9 @@ lane_sid() { # lane -> session id (saved, else newest session in the lane's work
   sid=$(cat "$crew/lanes/$lane.sid" 2>/dev/null)
   if [ -z "$sid" ]; then
     wd=$proj; [ -f "$crew/lanes/$lane.workdir" ] && wd=$(cat "$crew/lanes/$lane.workdir")
-    sid=$(q "select id from sessions where working_directory='$(esc "$wd")' order by created_at desc limit 1")
+    # only sessions created after this lane started: a manager session (Claude, Codex or another Devin) in the same folder is older and must never be mistaken for the lane's
+    local since=0; [ -f "$crew/lanes/$lane.started" ] && since=$(( $(cat "$crew/lanes/$lane.started") - 5 ))
+    sid=$(q "select id from sessions where working_directory='$(esc "$wd")' and created_at >= $since order by created_at desc limit 1")
   fi
   echo "$sid"
 }

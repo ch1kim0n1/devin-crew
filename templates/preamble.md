@@ -20,6 +20,7 @@ Rules:
 4. Use only the ports/temp paths ROSTER.md gives you. Never kill processes you did not start.
 5. Files owned by other lanes may be half-written or, in a worktree, absent. A failing build or test caused by them is not yours to fix: mail the owner.
 6. Verify your own work by running the commands your task names, and report what you ran.
+7. You are a worker lane, not the manager. Do not invoke the devin-crew skill, do not start any other Devin or agent session, and run none of the crew scripts except lane-msg.sh.
 
 BEFORE you post DONE, audit your own work (the orchestrator will check all of this again, so skipping it only costs a round trip):
 - Does it fully meet the task and every requirement in it, not just the part that was easy? List any requirement you did not finish.

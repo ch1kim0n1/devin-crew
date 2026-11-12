@@ -148,6 +148,19 @@ fh="$work/fakehome"; mkdir -p "$fh/.claude/skills/devin-crew"; git -C "$fh/.clau
 HOME="$fh" bash "$here/../install.sh" --codex >/dev/null 2>&1
 ok "install.sh --codex links the Claude install into ~/.codex/skills" '[ -L "$fh/.codex/skills/devin-crew" ]'
 
+echo "--- devin as manager"
+ok "devin.md exists and SKILL.md points at it" '[ -f "$here/../reference/devin.md" ] && grep -q "reference/devin.md" "$here/../SKILL.md"'
+ok "lanes are told they are workers" 'grep -q "You are a worker lane" "$here/../templates/preamble.md"'
+fh2="$work/fakehome2"; mkdir -p "$fh2/.claude/skills/devin-crew"; git -C "$fh2/.claude/skills/devin-crew" init -q
+ok "install.sh --devin recognizes an existing Claude install" 'HOME="$fh2" bash "$here/../install.sh" --devin 2>&1 | grep -q "Nothing to install"'
+# a manager session in the lane's folder must never be taken for the lane's session
+mp="$work/mgrproj"; mkdir -p "$mp/.devin-crew/lanes"; echo 2000 > "$mp/.devin-crew/lanes/zz.started"
+sqlite3 "$DEVIN_SESSIONS_DB" "create table if not exists sessions(id text, metadata text); alter table sessions add column working_directory text; alter table sessions add column created_at int;" 2>/dev/null
+sqlite3 "$DEVIN_SESSIONS_DB" "insert into sessions(id,working_directory,created_at) values('manager-old','$(cd "$mp" && pwd -P)',1000);"
+ok "no lane session when only an older (manager) session exists" '[ -z "$(bash $S/crew-observe.sh $mp zz --sid)" ]'
+sqlite3 "$DEVIN_SESSIONS_DB" "insert into sessions(id,working_directory,created_at) values('lane-new','$(cd "$mp" && pwd -P)',2100);"
+ok "the session created after the lane started is picked" '[ "$(bash $S/crew-observe.sh $mp zz --sid)" = "lane-new" ]'
+
 echo "--- doctor under sandboxes"
 d=$(CODEX_SANDBOX_NETWORK_DISABLED=1 bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
 ok "doctor fails when Codex disabled the network, with the fix" '[ "$rc" = 1 ] && printf "%s" "$d" | grep -q "FAIL this shell has the network disabled.*network_access = true"'
