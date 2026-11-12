@@ -1,6 +1,6 @@
 # Recon and proposal (phases 1-3)
 
-(`S` = `~/.claude/skills/devin-crew/scripts`)
+(`S` = the `scripts/` folder of this skill; see SKILL.md)
 
 Recon is **read-only**: no `devin` call, no script, no file created, nothing written into the project. Use Read/Grep/Glob and read-only git/shell (`git status`, `git log`, `ls`, running nothing that changes state).
 

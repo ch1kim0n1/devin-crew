@@ -1,6 +1,6 @@
 # Guardrails
 
-(`S` = `~/.claude/skills/devin-crew/scripts`)
+(`S` = the `scripts/` folder of this skill; see SKILL.md)
 
 All via `bash S/crew-guard.sh <project> <cmd>` unless noted.
 

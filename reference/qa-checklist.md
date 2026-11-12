@@ -1,6 +1,6 @@
 # Production QA checklist
 
-(`S` = `~/.claude/skills/devin-crew/scripts`)
+(`S` = the `scripts/` folder of this skill; see SKILL.md)
 
 **Why this exists.** Devin lanes (and `swe-2-flash-high` in particular) are fast, and fast coders optimize for "it runs". They miss details (edge cases, error paths, docs, call sites) and miss the big idea (the thing the user actually wanted). "Done" from a lane means "I stopped". You are the only check between a lane and the user's trust. Never say "it's done" to the user until this checklist is complete for the milestone and every item has evidence.
 

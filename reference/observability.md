@@ -1,6 +1,6 @@
 # Observability: knowing what a lane is really doing
 
-(`S` = `~/.claude/skills/devin-crew/scripts`)
+(`S` = the `scripts/` folder of this skill; see SKILL.md)
 
 A headless `devin -p` prints almost nothing while it works, so "no output" tells you nothing and a hung lane looks identical to a busy one. Never wait blind. The skill gives you three layers:
 

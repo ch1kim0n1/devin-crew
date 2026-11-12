@@ -1,0 +1,4 @@
+interface:
+  display_name: "Devin Crew"
+  short_description: "Manage a crew of headless Devin CLI agents on one project"
+  default_prompt: "Use $devin-crew to study this project, propose how many Devins to deploy and why, and wait for my go."

@@ -15,6 +15,16 @@ for t in git python3 sqlite3 tar awk pgrep; do
   if command -v "$t" >/dev/null 2>&1; then ok "tool: $t"; else fail "tool missing: $t -> install it (the scripts need it)"; fi
 done
 
+# Sandboxed agent shells (Codex workspace-write, containers) block what devin needs: the network and its own data folder.
+db="${DEVIN_SESSIONS_DB:-$HOME/.local/share/devin/cli/sessions.db}"
+if [ "${CODEX_SANDBOX_NETWORK_DISABLED:-0}" = 1 ]; then
+  fail "this shell has the network disabled (CODEX_SANDBOX_NETWORK_DISABLED=1) -> devin cannot reach its servers; run Codex with [sandbox_workspace_write] network_access = true, or sandbox_mode = danger-full-access (see reference/codex.md)"
+fi
+if [ -d "$(dirname "$db")" ] && [ ! -w "$(dirname "$db")" ]; then
+  fail "cannot write Devin's data folder $(dirname "$db") (sandbox?) -> add it to the sandbox's writable roots (Codex: sandbox_workspace_write.writable_roots) or relax the sandbox (see reference/codex.md)"
+fi
+[ -w "$proj" ] || fail "project folder is not writable from this shell -> lanes and .devin-crew/ need write access"
+
 if command -v devin >/dev/null 2>&1; then
   ok "devin on PATH ($(devin version 2>/dev/null | head -1))"
   as=$(devin auth status 2>&1 | head -1)
@@ -30,7 +40,6 @@ else
   fail "devin not found -> install the Devin CLI (https://devin.ai) and run: devin auth login"
 fi
 
-db="$HOME/.local/share/devin/cli/sessions.db"
 if [ -r "$db" ]; then ok "session store readable (observability on)"
 else warn "session store not found at $db -> crew-observe falls back to process/log/file signals only"; fi
 

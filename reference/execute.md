@@ -1,6 +1,6 @@
 # Phase 4 in detail: executing a milestone
 
-(`S` = `~/.claude/skills/devin-crew/scripts`)
+(`S` = the `scripts/` folder of this skill; see SKILL.md)
 
 ## First milestone only: set up
 

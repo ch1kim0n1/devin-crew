@@ -5,6 +5,7 @@ You set the goal and approve the plan. Claude studies your project, proposes how
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/ch1kim0n1/devin-crew)](https://github.com/ch1kim0n1/devin-crew/releases)
+![Agents](https://img.shields.io/badge/manager-Claude%20Code%20%7C%20Codex-informational)
 ![Platforms](https://img.shields.io/badge/macOS%20%E2%9C%93%20%7C%20Linux%20(offline%20tests)-lightgrey)
 
 [Install](#install) · [Let Claude install and adapt it](#let-claude-install-and-adapt-it) · [How it works](#how-it-works) · [Commands](#commands) · [Safety](#safety-read-this-first) · [Configuration](#configuration) · [FAQ](#faq)
@@ -16,6 +17,8 @@ You set the goal and approve the plan. Claude studies your project, proposes how
     |             briefs the workers, routes their mail, watches them, QAs their work
  DEVIN, DEVIN…    workers: take tasks from Claude, nothing else
 ```
+
+Works with **Claude Code** (primary, tested with real runs) and **Codex** as the manager agent (`$devin-crew`; see [Codex](#codex)). The workers are always Devin CLI agents.
 
 ## Why
 
@@ -76,6 +79,14 @@ bash ~/.claude/skills/devin-crew/scripts/crew-doctor.sh <your-project> --trust
 ```
 
 `--trust` runs one tiny Devin turn to confirm the folder is trusted (run `devin` once in the folder and accept if it is not). Uninstall: `rm -rf ~/.claude/skills/devin-crew`; each project's `.devin-crew/` folder is separate.
+
+### Codex
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ch1kim0n1/devin-crew/main/install.sh | bash -s -- --codex
+```
+
+This puts the skill in `~/.codex/skills/devin-crew` (or links an existing Claude install). In Codex type `$devin-crew <goal>` or pick it with `/skills`. Codex's default sandbox blocks the network, which Devin needs: run `bash ~/.codex/skills/devin-crew/scripts/crew-doctor.sh <project> --trust` and follow [reference/codex.md](reference/codex.md) for the `config.toml` settings. Codex has no background-run tool, so the skill uses `crew-launch.sh` / `crew-wait.sh` / `crew-notify.sh` there. **Status: the scripts and packaging are tested offline; I have not yet run a full crew under Codex.**
 
 ## Let Claude install and adapt it
 
@@ -171,6 +182,8 @@ Details: [SECURITY.md](SECURITY.md).
 
 **Windows?** Untested; try WSL.
 
+**Does it work with Codex?** As the manager, yes in design: same scripts, `$devin-crew`, launch/wait helpers instead of background tools, and a doctor that checks the sandbox. Not yet run end to end under Codex; reports welcome. Codex as a *worker* (instead of Devin) is not supported.
+
 **How is this different from running several agents in tmux or an app like Conductor?** Those give you panes. This adds a plan you approve, contracts and mail between lanes, a watchdog, error handoff to you, and a QA gate per milestone. If you want a GUI, use one of those.
 
 ## Project layout
@@ -188,7 +201,7 @@ install.sh              install / update
 
 ## Status and testing
 
-- 118 offline checks with a fake `devin` (`bash tests/smoke.sh`), shellcheck-clean; the same suite passes on Debian 12 in a container (`bash tests/linux-docker.sh`).
+- 132 offline checks with a fake `devin` (`bash tests/smoke.sh`), shellcheck-clean; the same suite passes on Debian 12 in a container (`bash tests/linux-docker.sh`).
 - Real Devin runs on macOS: a 3-lane trial and a 5-lane contract-first run with hung-command recovery, a mid-run contract change, a read-only reviewer and a mutation check ([tests/e2e-log.md](tests/e2e-log.md)).
 - Claude's own discipline (the gate, the QA, error handoff) is checked with fresh-model paper scenarios (`tests/pressure-scenarios.md`) and a trigger check on the skill description (`tests/trigger-prompts.md`).
 - **Not yet exercised:** real Devin runs on Linux, large codebases (thousands of files), shared-tree mode with 5 lanes. Expect rough edges; please [open an issue](https://github.com/ch1kim0n1/devin-crew/issues).

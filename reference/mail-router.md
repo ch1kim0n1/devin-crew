@@ -1,6 +1,6 @@
 # Mail and the router
 
-(`S` = `~/.claude/skills/devin-crew/scripts`)
+(`S` = the `scripts/` folder of this skill; see SKILL.md)
 
 Lanes talk with `bash S/lane-msg.sh <project> send|read|pending ...` (the preamble teaches them). They check mail at start, after each milestone, and before DONE, so a running lane sees mail within minutes. A lane that already finished never sees mail on its own: **you are the wake-up.**
 

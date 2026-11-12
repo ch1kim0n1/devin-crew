@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0 (unreleased)
+
+- Codex as the manager agent: `reference/codex.md` (tool substitutions, sandbox settings, loop), `agents/openai.yaml`, `AGENTS.md`, `install.sh --codex`.
+- `crew-launch.sh`, `crew-wait.sh`, `crew-notify.sh` for agents without a background-run tool or push tool.
+- `crew-doctor.sh` fails with the fix when a sandbox disables the network or makes Devin's data folder read-only.
+- Skill paths are no longer Claude-specific in the docs.
+
 ## 1.0.0 (2026-11-11)
 
 First public release.

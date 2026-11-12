@@ -1,6 +1,6 @@
 # Git rights for lanes and for you
 
-(`S` = `~/.claude/skills/devin-crew/scripts`)
+(`S` = the `scripts/` folder of this skill; see SKILL.md)
 
 **Default: nobody commits or pushes.** Worktree merges leave uncommitted edits in the main tree. Ask in the proposal whether lanes should commit/push; default no.
 

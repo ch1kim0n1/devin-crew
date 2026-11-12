@@ -118,6 +118,46 @@ gp="$work/gproj"; mkdir -p "$gp/.devin-crew"; git -C "$gp" init -q
 bash "$S/crew-guard.sh" "$gp" lock >/dev/null 2>&1; bash "$S/crew-guard.sh" "$gp" unlock >/dev/null; bash "$S/crew-guard.sh" "$gp" lock >/dev/null 2>&1
 ok "lock adds .devin-crew/ to .git/info/exclude once" '[ "$(grep -cxF ".devin-crew/" "$gp/.git/info/exclude")" = 1 ] && [ -z "$(git -C "$gp" status --porcelain)" ]'
 
+echo "--- launch/wait/notify (agents without a background tool, e.g. Codex)"
+cw="$work/cw"; mkdir -p "$cw/.devin-crew"
+r=$(bash "$S/crew-launch.sh" "$cw" lane wl - "$work/task.md")
+ok "launch returns at once with pid and log" 'printf "%s" "$r" | grep -q "^launched lane wl pid [0-9]"'
+w=$(bash "$S/crew-wait.sh" "$cw" 30); rc=$?
+ok "wait reports the lane exit once" '[ "$rc" = 0 ] && printf "%s" "$w" | grep -q "^LANE-EXIT wl done$"'
+w=$(bash "$S/crew-wait.sh" "$cw" 5); rc=$?
+ok "second wait: already reported -> NOTHING-RUNNING (exit 4)" '[ "$rc" = 4 ] && [ "$w" = "NOTHING-RUNNING" ]'
+STUB_SLEEP=7 bash "$S/crew-launch.sh" "$cw" lane slow - "$work/task.md" >/dev/null
+w=$(bash "$S/crew-wait.sh" "$cw" 2); rc=$?
+ok "wait is bounded: timeout names the running lane (exit 3)" '[ "$rc" = 3 ] && printf "%s" "$w" | grep -q "^WAIT-TIMEOUT after 2s; running: slow"'
+w=$(bash "$S/crew-wait.sh" "$cw" 40)
+ok "later wait sees the exit" 'printf "%s" "$w" | grep -q "^LANE-EXIT slow done$"'
+STUB_EXIT=1 STUB_OUTPUT="Reached request rate limit. Your limit will reset in 2 minutes." bash "$S/crew-launch.sh" "$cw" lane lim2 - "$work/task.md" >/dev/null
+w=$(bash "$S/crew-wait.sh" "$cw" 40)
+ok "wait surfaces NEEDS-USER with the class" 'printf "%s" "$w" | grep -q "^LANE-EXIT lim2 failed(1)$" && printf "%s" "$w" | grep -q "^NEEDS-USER lim2 RATE_OR_QUOTA$"'
+bash "$S/crew-launch.sh" "$cw" lane lim2 - - >/dev/null 2>&1; rc=$?
+ok "launch refuses a lane waiting on the user (exit 5)" '[ "$rc" = 5 ]'
+bash "$S/crew-launch.sh" "$cw" router 1 >/dev/null
+w=$(bash "$S/crew-wait.sh" "$cw" 40)
+ok "wait reports the router's final line" 'printf "%s" "$w" | grep -q "^ROUTER QUIESCENT"'
+ok "notify never fails" 'bash $S/crew-notify.sh "test message" >/dev/null 2>&1'
+
+echo "--- codex packaging"
+ok "SKILL.md frontmatter has name and description" 'head -5 "$here/../SKILL.md" | grep -q "^name: devin-crew" && head -5 "$here/../SKILL.md" | grep -q "^description: "'
+ok "codex metadata and notes exist, SKILL.md points at them" '[ -f "$here/../agents/openai.yaml" ] && [ -f "$here/../reference/codex.md" ] && grep -q "reference/codex.md" "$here/../SKILL.md"'
+fh="$work/fakehome"; mkdir -p "$fh/.claude/skills/devin-crew"; git -C "$fh/.claude/skills/devin-crew" init -q
+HOME="$fh" bash "$here/../install.sh" --codex >/dev/null 2>&1
+ok "install.sh --codex links the Claude install into ~/.codex/skills" '[ -L "$fh/.codex/skills/devin-crew" ]'
+
+echo "--- doctor under sandboxes"
+d=$(CODEX_SANDBOX_NETWORK_DISABLED=1 bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
+ok "doctor fails when Codex disabled the network, with the fix" '[ "$rc" = 1 ] && printf "%s" "$d" | grep -q "FAIL this shell has the network disabled.*network_access = true"'
+if [ "$(id -u)" != 0 ]; then
+  mkdir -p "$work/rodata"; chmod 555 "$work/rodata"
+  d=$(DEVIN_SESSIONS_DB="$work/rodata/sessions.db" bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
+  ok "doctor fails when devin's data folder is read-only" '[ "$rc" = 1 ] && printf "%s" "$d" | grep -q "FAIL cannot write Devin.s data folder.*writable_roots"'
+  chmod 755 "$work/rodata"
+fi
+
 echo "--- doctor"
 d=$(bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
 ok "doctor ready on a healthy setup" '[ "$rc" = 0 ] && printf "%s" "$d" | grep -q "doctor: ready" && printf "%s" "$d" | grep -q "model available: swe-2-flash-high"'

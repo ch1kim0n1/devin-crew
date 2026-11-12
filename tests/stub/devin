@@ -23,6 +23,7 @@ n=$(cat "$STUB_OUT/count" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$ST
 printf 'call=%s resume=%s model=%s perm=%s\n' "$n" "${sid:-no}" "$model" "$perm" >> "$STUB_OUT/args.log"
 printf '=== call %s ===\n%s\n' "$n" "$prompt" >> "$STUB_OUT/prompts.log"
 [ -n "${STUB_OUTPUT:-}" ] && echo "$STUB_OUTPUT"
+[ -n "${STUB_SLEEP:-}" ] && sleep "$STUB_SLEEP"
 [ -n "${STUB_APPEND_BOARD:-}" ] && echo "$STUB_APPEND_BOARD" >> "$STUB_BOARD"
 [ -n "$export_f" ] && printf '{"session_id":"%s"}\n' "${sid:-stub-session-$n}" > "$export_f"
 exit "${STUB_EXIT:-0}"

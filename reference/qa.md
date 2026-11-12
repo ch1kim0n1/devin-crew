@@ -1,6 +1,6 @@
 # Milestone QA (phase 5)
 
-(`S` = `~/.claude/skills/devin-crew/scripts`)
+(`S` = the `scripts/` folder of this skill; see SKILL.md)
 
 Run after **every lane of a milestone has exited** (not while any is `running`), and again over the whole objective after the last milestone. QA is yours. A lane's DONE line is a claim, not evidence.
 
