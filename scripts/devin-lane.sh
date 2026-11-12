@@ -2,7 +2,7 @@
 # Run (or resume) one Devin "lane" headless. Run me with Bash run_in_background=true.
 # usage: bash devin-lane.sh [--print] <project_dir> <lane> <model|-> <task_file|-> [permission_mode=dangerous]
 #   --print        dry run: show the exact prompt, rights and command this launch would use; starts nothing, changes nothing
-#   model "-"      reuse the model this lane was first launched with (always swe-2-flash-high)
+#   model "-"      reuse the model this lane was first launched with (see CREW_MODEL / MODEL file; default swe-2-flash-high)
 #   task_file "-"  wake-up: the lane only gets "you have new mail"
 # env: CREW_ROLE=<name>        first launch only: append templates/roles/<name>.md to the preamble
 #      CREW_GIT=commit|push    first launch only, ONLY when the user told the orchestrator to: lane may commit (push needs
@@ -45,10 +45,11 @@ if [ -f "$nu" ]; then
     ev "launch refused: awaiting user decision after $(head -1 "$nu")"; exit 5
   fi
 fi
-if [ "$model" = "-" ]; then model=$(cat "$model_file" 2>/dev/null) || model=swe-2-flash-high; fi
-# User's standing rule (2026-11-09): lanes ALWAYS run swe-2-flash-high. Anything else is coerced.
-if [ "$model" != "swe-2-flash-high" ]; then
-  echo "model '$model' not allowed, using swe-2-flash-high" >&2; model=swe-2-flash-high
+# One model for every lane: CREW_MODEL, else the first line of <skill>/MODEL, else swe-2-flash-high (free). Anything else asked for is coerced.
+want=${CREW_MODEL:-$(head -1 "$skill_dir/MODEL" 2>/dev/null)}; want=${want:-swe-2-flash-high}
+if [ "$model" = "-" ]; then model=$(cat "$model_file" 2>/dev/null) || model=$want; fi
+if [ "$model" != "$want" ] && ! { [ -f "$sid_file" ] && [ "$model" = "$(cat "$model_file" 2>/dev/null)" ]; }; then
+  echo "model '$model' not allowed, using $want" >&2; model=$want
 fi
 [ "$dry" -eq 1 ] || echo "$model" > "$model_file"
 

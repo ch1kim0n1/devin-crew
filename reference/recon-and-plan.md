@@ -22,7 +22,7 @@ Present, in this order and compactly:
 - **How many Devins, and why.** Rule of thumb: one lane per cluster of files that can be changed independently; never more lanes than disjoint clusters; cap 5; a small or strictly serial job gets 1-2 lanes, and say so even if it is less impressive. State the cost of more lanes (coordination, merge conflicts) next to the gain.
 - **Contracts** the lanes share (each with owner lane and consumers).
 - **Isolation**: worktrees or shared tree, and why. Warn if the main tree has uncommitted work (the lanes start from it).
-- **Fixed settings** reminder: `swe-2-flash-high`, bypass mode, git rights (default none; lanes commit or push only if the user says so).
+- **Defaults** reminder: the lane model (`swe-2-flash-high` unless the user changed it), bypass mode, git rights (default none; lanes commit or push only if the user says so).
 - **QA plan**: what you check after each milestone (see `reference/qa.md`), whether a reviewer lane runs, the baseline command.
 - **Risks and open questions** for the user: weak spots in the plan, unknowns from recon, decisions only they can make.
 - **Recommendation**: the one plan you would run. Alternatives only if the choice really is theirs.

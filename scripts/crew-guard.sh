@@ -60,6 +60,11 @@ case "$cmd" in
       if [ "$age" -lt 7200 ]; then echo "another crew holds this project (lock is ${age}s old). Use --force to take over." >&2; exit 1; fi
     fi
     date +%s > "$crew/LOCK"; echo "locked"
+    # keep run state (logs, mail, session ids, local paths) out of the user's commits: local-only ignore, no tracked file changed
+    if gd=$(git -C "$proj" rev-parse --git-path info/exclude 2>/dev/null) && [ -n "$gd" ]; then
+      case "$gd" in /*) ex=$gd;; *) ex="$proj/$gd";; esac
+      grep -qxF '.devin-crew/' "$ex" 2>/dev/null || { mkdir -p "$(dirname "$ex")"; echo '.devin-crew/' >> "$ex"; echo "added .devin-crew/ to $ex"; }
+    fi
     ;;
   unlock) rm -f "$crew/LOCK"; echo "unlocked" ;;
   baseline)

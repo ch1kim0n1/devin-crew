@@ -24,15 +24,26 @@ You give a goal. Claude reads the project, proposes milestones and **how many De
 
 - Claude Code
 - [Devin CLI](https://devin.ai) installed and logged in (`devin auth login`), the project folder trusted once (`devin` in it)
-- `bash`, `git`, `python3`, `sqlite3`, `tar` (developed on macOS; the stat/date calls fall back to GNU forms, Linux still untested)
+- `bash`, `git`, `python3`, `sqlite3`, `tar`, and `pgrep`/`pkill` (procps)
+- macOS: tested with real Devin runs. Linux: the offline suite passes on Debian 12 (`tests/linux-docker.sh`); no real Devin runs yet. Windows: untested (try WSL).
 
 ## Install
 
 ```bash
-git clone https://github.com/ch1kim0n1/devin-crew ~/.claude/skills/devin-crew
+curl -fsSL https://raw.githubusercontent.com/ch1kim0n1/devin-crew/main/install.sh | bash
 ```
 
-Restart Claude Code (or start a new session).
+Or by hand: `git clone https://github.com/ch1kim0n1/devin-crew ~/.claude/skills/devin-crew`. Restart Claude Code (or start a new session), then check your setup:
+
+```bash
+bash ~/.claude/skills/devin-crew/scripts/crew-doctor.sh <your-project> --trust
+```
+
+Update: re-run the installer (fast-forward only). Uninstall: `rm -rf ~/.claude/skills/devin-crew` (your projects' `.devin-crew/` folders are separate; delete them if you no longer need the logs).
+
+## Read this before the first run
+
+Lanes run Devin in **bypass mode**: nothing asks permission before a lane runs a command or edits a file. Guardrails (file scopes, worktrees, snapshots, scope checks) limit the damage; they are not a sandbox. Try it on a throwaway clone first, keep your work committed, and read [SECURITY.md](SECURITY.md). The skill sends nothing anywhere itself; the usage ledger stays on your machine.
 
 ## Use
 
@@ -46,9 +57,9 @@ Restart Claude Code (or start a new session).
 
 To let Claude skip the wait for your go: tell it to decide on its own (it writes `AUTONOMY=auto`). It still does recon, shows the plan, and does QA.
 
-## Settings baked in (edit the scripts to change them)
+## Defaults
 
-- Every lane runs `swe-2-flash-high` (`scripts/devin-lane.sh` coerces any other model).
+- Every lane runs one model, `swe-2-flash-high` by default (free). Put another model id in a file named `MODEL` next to `SKILL.md`, or set `CREW_MODEL`, to change it for all lanes. Check ids with `devin models`.
 - Every lane runs in Devin's **bypass mode** (`--permission-mode dangerous`): all tool approvals off. The only guardrails are file scopes, the lane preamble, the snapshot/worktree and the checks. Read `SKILL.md` before running this on anything you cannot afford to lose.
 - Verification is local: Claude trusts what it ran itself (acceptance commands, project tests, QA checklist) and never waits on GitHub CI.
 - Lanes never commit or push by default. If you tell Claude to ("have them commit", "commit and push to origin main"), it launches them with `CREW_GIT=commit` or `CREW_GIT=push CREW_GIT_TARGET="origin main"`: each lane stages only its own scoped files, commits after its verify passes, and pushes with a plain `git push` (never forced; one rebase retry, then BLOCKED). Lanes commit per verified unit of work, not one giant commit and not per tiny edit. Shared-tree mode only; with worktrees Claude commits after merge instead. A standing "commit and push regularly" instruction counts as the go-ahead.
@@ -78,11 +89,14 @@ scripts/crew-status.sh      one-screen status
 scripts/lane-msg.sh         mail between lanes
 templates/                  lane preamble and role presets
 tests/smoke.sh              offline regression test (fake devin, shellcheck), `bash tests/smoke.sh`
+tests/linux-docker.sh       the same suite on Linux in a container
+install.sh                  install / update
+CHANGELOG.md  SECURITY.md  CONTRIBUTING.md
 ```
 
 ## Status
 
-Tested offline (`bash tests/smoke.sh`, 116 checks with a fake `devin`) and in real runs with real Devin lanes: a 3-lane trial and a 5-lane run with a mid-run contract change, hung-command recovery, a read-only reviewer and a mutation check (`tests/e2e-log.md`). Claude's own gate and QA discipline is checked with fresh-model pressure scenarios (`tests/pressure-scenarios.md`) and the description with a trigger check (`tests/trigger-prompts.md`). Not yet exercised: Linux, large codebases (thousands of files), shared-tree mode with 5 lanes. Expect rough edges and open an issue.
+Tested offline (`bash tests/smoke.sh`, 118 checks with a fake `devin`) and in real runs with real Devin lanes: a 3-lane trial and a 5-lane run with a mid-run contract change, hung-command recovery, a read-only reviewer and a mutation check (`tests/e2e-log.md`). Claude's own gate and QA discipline is checked with fresh-model pressure scenarios (`tests/pressure-scenarios.md`) and the description with a trigger check (`tests/trigger-prompts.md`). The offline suite also passes on Debian 12 in a container. Not yet exercised: real Devin runs on Linux, large codebases (thousands of files), shared-tree mode with 5 lanes. Expect rough edges and open an issue.
 
 ## License
 

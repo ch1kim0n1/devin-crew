@@ -17,9 +17,9 @@ Scripts live in `~/.claude/skills/devin-crew/scripts/` (`S` below). Detail lives
 - `/devin-crew stats`: only when the user asks how they use Devin (usage, time, tasks, projects, tokens, QA, fun facts) across all projects: `bash S/crew-analytics.sh`, summarize. Add `viz` (`bash S/crew-analytics.sh viz`) when they ask for charts or a report, then show the HTML with `SendUserFile` (display render). Never build or send it unasked. Data: `S/../usage/ledger.tsv`, written by the lane and QA scripts, local and git-ignored.
 - `/devin-crew resume`: `bash S/crew-resume.sh <project>` prints the approved plan, live state and a numbered NEXT list. Follow it; confirm with the user first if PLAN.md is missing. Continue at phase 4.
 
-## Fixed settings (user's standing rules)
+## Defaults
 
-Every lane runs `swe-2-flash-high` (the script coerces anything else): free, weaker than frontier, so keep scopes tight, contracts explicit, verify everything yourself. Every lane runs in bypass mode (`--permission-mode dangerous`): nothing gates its tools, so scopes, preamble and guards are the only safety. Lanes do not touch git unless the user said so (`reference/git-rights.md`).
+Every lane runs one model: `swe-2-flash-high` by default (free, weaker than frontier, so keep scopes tight, contracts explicit, verify everything yourself). The user can change it for all lanes with a `MODEL` file next to this skill or `CREW_MODEL`; the script coerces any other model. Change it only on their word. Every lane runs in bypass mode (`--permission-mode dangerous`): nothing gates its tools, so scopes, preamble and guards are the only safety. Lanes do not touch git unless the user said so (`reference/git-rights.md`).
 
 ## Phases
 

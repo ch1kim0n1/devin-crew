@@ -5,7 +5,7 @@
 set -u
 proj=$(cd "${1:-.}" 2>/dev/null && pwd -P) || { echo "FAIL project folder does not exist: ${1:-.}"; exit 1; }
 trust=0; [ "${2:-}" = "--trust" ] && trust=1
-model=swe-2-flash-high
+model=${CREW_MODEL:-$(head -1 "$(dirname "$0")/../MODEL" 2>/dev/null)}; model=${model:-swe-2-flash-high}
 bad=0
 ok()   { echo "OK   $*"; }
 warn() { echo "WARN $*"; }

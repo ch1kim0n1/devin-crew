@@ -13,8 +13,8 @@
 ## Per wave
 
 1. Write each task as a brief in `.devin-crew/prompts/<lane>-<n>.md`: goal, owned files, contracts, the exact verify command, definition of done, sibling lanes and what they are doing right now. One milestone per lane turn. `crew-tasks.sh <project> next` lists the tasks that can launch.
-2. In `ask` mode show the user what will run: `bash S/devin-lane.sh --print <project> <lane> swe-2-flash-high <task_file>` prints the exact prompt, rights and command without launching.
-3. Launch every lane of the wave in one message, each with Bash `run_in_background: true`: `[CREW_ROLE=<implementer|tests|docs|refactor|reviewer>] bash S/devin-lane.sh <project> <lane> swe-2-flash-high <task_file>`, and in the same message `bash S/crew-router.sh <project>` (background too: wakes lanes that get mail, exits once with `QUIESCENT` or `ORCHESTRATOR-MAIL`). Watchdog: 45 min per turn (`CREW_MAX_SECS`). Git rights: `reference/git-rights.md`.
+2. In `ask` mode show the user what will run: `bash S/devin-lane.sh --print <project> <lane> - <task_file>` prints the exact prompt, rights and command without launching.
+3. Launch every lane of the wave in one message, each with Bash `run_in_background: true`: `[CREW_ROLE=<implementer|tests|docs|refactor|reviewer>] bash S/devin-lane.sh <project> <lane> - <task_file>`, and in the same message `bash S/crew-router.sh <project>` (background too: wakes lanes that get mail, exits once with `QUIESCENT` or `ORCHESTRATOR-MAIL`). Watchdog: 45 min per turn (`CREW_MAX_SECS`). Git rights: `reference/git-rights.md`.
 4. Wait for exit notifications (lane exits, router exit). Never poll, never wait blind: the built-in watchdog detects hung commands, empty-reply loops and dead lanes, nudges or kills them, and logs to `.devin-crew/events.log` (`reference/observability.md`).
 
 ## On each lane exit

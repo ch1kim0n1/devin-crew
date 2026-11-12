@@ -35,6 +35,8 @@ printf 'x\tsrc/*\n' > /dev/null
 out=$(bash "$S/devin-lane.sh" "$proj" api some-other-model "$work/task.md" 2>&1)
 ok "lane finishes done" '[ "$(cat $crew/lanes/api.status)" = "done" ]'
 ok "model coerced" 'grep -q "model=swe-2-flash-high" $STUB_OUT/args.log'
+CREW_MODEL=my-other-model bash "$S/devin-lane.sh" "$proj" mdl - "$work/task.md" >/dev/null 2>&1
+ok "CREW_MODEL changes the lane model" 'grep -q "model=my-other-model" $STUB_OUT/args.log && [ "$(cat $crew/lanes/mdl.model)" = "my-other-model" ]'
 ok "bypass mode default" 'grep -q "perm=dangerous" $STUB_OUT/args.log'
 ok "session id recorded" '[ "$(cat $crew/lanes/api.sid)" = "stub-session-1" ]'
 ok "task and preamble in prompt" 'grep -q "build the thing" $STUB_OUT/prompts.log && grep -q "api" $STUB_OUT/prompts.log'
@@ -110,6 +112,11 @@ echo "--- ledger hint"
 h=$(bash "$S/crew-analytics.sh" hint)
 ok "hint summarizes earlier crews" 'printf "%s" "$h" | grep -q "^history: 1 earlier crew" && printf "%s" "$h" | grep -q "first-try rate"'
 ok "hint is silent without history" '[ -z "$(CREW_LEDGER=$work/none.tsv bash $S/crew-analytics.sh hint)" ]'
+
+echo "--- run state stays out of commits"
+gp="$work/gproj"; mkdir -p "$gp/.devin-crew"; git -C "$gp" init -q
+bash "$S/crew-guard.sh" "$gp" lock >/dev/null 2>&1; bash "$S/crew-guard.sh" "$gp" unlock >/dev/null; bash "$S/crew-guard.sh" "$gp" lock >/dev/null 2>&1
+ok "lock adds .devin-crew/ to .git/info/exclude once" '[ "$(grep -cxF ".devin-crew/" "$gp/.git/info/exclude")" = 1 ] && [ -z "$(git -C "$gp" status --porcelain)" ]'
 
 echo "--- doctor"
 d=$(bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?

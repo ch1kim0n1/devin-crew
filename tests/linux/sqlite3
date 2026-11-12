@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+# Minimal stand-in for the `sqlite3` CLI (only `sqlite3 [-readonly] DB "SQL"`), so tests/linux-docker.sh can run in
+# a stock Linux image that has python3 but no sqlite3 binary. Rows print '|'-separated, NULL as empty, like the real CLI.
+import sqlite3, sys
+a = [x for x in sys.argv[1:] if not x.startswith("-")]
+ro = "-readonly" in sys.argv
+db, sql = a[0], a[1] if len(a) > 1 else ""
+con = sqlite3.connect(f"file:{db}?mode=ro", uri=True) if ro else sqlite3.connect(db)
+try:
+    cur = con.executescript(sql) if not sql.lstrip().lower().startswith(("select", "with")) else con.execute(sql)
+    for row in cur.fetchall() if sql.lstrip().lower().startswith(("select", "with")) else []:
+        print("|".join("" if c is None else str(c) for c in row))
+    con.commit()
+except sqlite3.Error as e:
+    print(f"Error: {e}", file=sys.stderr); sys.exit(1)
