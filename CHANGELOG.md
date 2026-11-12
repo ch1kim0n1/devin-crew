@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.1.5 (2026-11-11)
 
 - Devin CLI as the manager agent: `reference/devin.md`, `install.sh --devin`; discovery through Devin's Claude importer verified.
 - Lane session fallback now ignores sessions older than the lane's start, so a manager session in the same folder is never mistaken for a lane's.
 - Lane preamble: lanes must not invoke the devin-crew skill or start other sessions.
+- Known gaps: no full crew run yet with Devin or Codex as the manager; Linux container suite last run before the Codex and Devin changes.
 
 ## 1.1.0 (2026-11-11)
 
