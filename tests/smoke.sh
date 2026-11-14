@@ -374,6 +374,56 @@ printf '| t9 | api | s | - | sleep 30 | done |\n' > "$crew/TASKS.md"
 v=$(CREW_VERIFY_SECS=2 bash "$S/crew-verify.sh" "$proj" api 2>&1)
 ok "acceptance timeout enforced" 'printf "%s" "$v" | grep -q "^TIMEOUT t9 api"'
 
+echo "--- conductor / collect / review"
+mkcrew() { # mkcrew <name> -> prints project dir with TASKS for lanes a (acceptance: flag file) and b (true)
+  local d="$work/$1"; mkdir -p "$d/.devin-crew/prompts"; printf 'version: 1\n' > "$d/.devin-crew/CONTRACTS.md"; : > "$d/.devin-crew/BOARD.md"
+  printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n| t1 | a | x | - | test -f %s/flag.txt | open |\n| t2 | b | y | - | true | open |\n' "$d" > "$d/.devin-crew/TASKS.md"
+  printf 'task one\n' > "$d/.devin-crew/prompts/t1.md"; printf 'task two\n' > "$d/.devin-crew/prompts/t2.md"; echo "$d"; }
+DONES=$'DONE a: files changed: x | verified: test -> ok | contracts: v1 | open issues for other lanes: none\nDONE b: files changed: y | verified: true -> ok | contracts: v1 | open issues for other lanes: none'
+export CREW_CONDUCT_POLL=0.3 CREW_CONDUCT_MAX_SECS=90
+
+cp1=$(mkcrew cond-clean); touch "$cp1/flag.txt"
+o=$(STUB_BOARD="$cp1/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" bash "$S/crew-conduct.sh" "$cp1" 2>&1)
+ok "conductor: two ready tasks run in parallel lanes, ends MILESTONE-READY" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY" && [ "$(cat $cp1/.devin-crew/lanes/a.status)" = done ] && [ "$(cat $cp1/.devin-crew/lanes/b.status)" = done ]'
+ok "conductor: tasks verified done" '! grep -qE "\| (open|running|review|failed) *\|? *$" $cp1/.devin-crew/TASKS.md'
+ok "conductor: reviewer lane launched read-only for each lane" '[ -f $cp1/.devin-crew/lanes/a-rev.readonly ] && [ -f $cp1/.devin-crew/lanes/b-rev.status ] && grep -q "ROLE: reviewer" $STUB_OUT/prompts.log'
+ok "conductor: missing findings file is a recorded skip, not a hang" 'printf "%s" "$o" | grep -q "REVIEW-SKIPPED a (no findings file)"'
+ok "conductor: digest is short" '[ "$(printf "%s\n" "$o" | wc -l | tr -d " ")" -le 12 ]'
+
+cp2=$(mkcrew cond-fix); grep -v "^| t2 " "$cp2/.devin-crew/TASKS.md" > "$cp2/TASKS.tmp" && mv "$cp2/TASKS.tmp" "$cp2/.devin-crew/TASKS.md"; c0=$(cat "$STUB_OUT/count")
+o=$(STUB_BOARD="$cp2/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" STUB_WRITE="$cp2/flag.txt::ok" STUB_WRITE_FROM=$((c0 + 2)) CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cp2" 2>&1)
+ok "conductor: failed acceptance resumes the lane with the failure, then passes" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY" && grep -q "needs fixes (acceptance/contract)" $STUB_OUT/prompts.log && grep -q "FAIL t1 a" $STUB_OUT/prompts.log'
+ok "conductor: one fix round recorded" '[ "$(cat $cp2/.devin-crew/conduct/a.fix)" = 1 ]'
+
+cp3=$(mkcrew cond-exhaust)
+o=$(STUB_BOARD="$cp3/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOFIX=0 CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cp3" 2>&1)
+ok "conductor: exhausted fix rounds end the run as BRAIN with the reason" 'printf "%s" "$o" | grep -q "^CONDUCT BRAIN a: fix rounds exhausted"'
+bash "$S/crew-conduct.sh" "$cp3" --reset a >/dev/null
+ok "conductor --reset clears the brain state" '[ "$(cat $cp3/.devin-crew/conduct/a.state)" = launched ] && [ ! -f $cp3/.devin-crew/conduct/a.brain ]'
+
+cp4=$(mkcrew cond-user)
+o=$(STUB_BOARD="$cp4/.devin-crew/BOARD.md" STUB_EXIT=1 STUB_OUTPUT="Error: 429 usage limit reached" CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cp4" 2>&1)
+ok "conductor: a Devin error goes to the user, never retried" 'printf "%s" "$o" | grep -q "^CONDUCT NEEDS-USER .* RATE_OR_QUOTA"'
+
+cp5=$(mkcrew cond-stuck); rm -f "$cp5/.devin-crew/prompts/t2.md"; touch "$cp5/flag.txt"
+o=$(STUB_BOARD="$cp5/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cp5" 2>&1)
+ok "conductor: a task without a brief is reported, not silently skipped" 'printf "%s" "$o" | grep -q "^CONDUCT STUCK t2.*no brief for: t2"'
+
+cp6=$(mkcrew collect); touch "$cp6/flag.txt"; STUB_BOARD="$cp6/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" bash "$S/devin-lane.sh" "$cp6" a - "$cp6/.devin-crew/prompts/t1.md" >/dev/null 2>&1
+o=$(bash "$S/crew-collect.sh" "$cp6" a 2>&1); rc=$?
+ok "collect: clean lane -> VERDICT CLEAN, exit 0" '[ "$rc" = 0 ] && printf "%s" "$o" | grep -q "^VERDICT CLEAN" && printf "%s" "$o" | grep -q "PASS t1 a"'
+rm -f "$cp6/flag.txt"; bash "$S/crew-tasks.sh" "$cp6" set t1 review
+o=$(bash "$S/crew-collect.sh" "$cp6" a 2>&1); rc=$?
+ok "collect: failing acceptance -> VERDICT FIX, exit 1" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "^VERDICT FIX (acceptance failed)"'
+o=$(bash "$S/crew-collect.sh" "$cp6" nolane 2>&1); rc=$?
+ok "collect: unknown lane -> BRAIN" '[ "$rc" = 2 ] && printf "%s" "$o" | grep -q "^VERDICT BRAIN"'
+bash "$S/crew-review.sh" "$cp6" a --print >/dev/null 2>&1
+ok "review --print writes a brief with acceptance command and no launch" 'grep -q "acceptance: test -f" $cp6/.devin-crew/prompts/a-rev-1.md && [ ! -f $cp6/.devin-crew/lanes/a-rev.status ]'
+printf 'src/x.py:3: high: unchecked input. validate.\nsrc/y.py:9: low: nit.\n' > "$cp6/.devin-crew/reviews/a.md"
+o=$(bash "$S/crew-review.sh" "$cp6" a --findings 2>&1); rc=$?
+ok "review --findings counts severities, exit 1 on high/med" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "REVIEW a: high=1 med=0"'
+unset CREW_CONDUCT_POLL CREW_CONDUCT_MAX_SECS
+
 echo "--- report"
 rep=$(bash "$S/crew-report.sh" "$proj")
 ok "report lists lanes with counts" 'printf "%s" "$rep" | grep -Eq "^api +1 +[0-9]+" && printf "%s" "$rep" | grep -q "failed(3)"'

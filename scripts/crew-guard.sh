@@ -99,6 +99,7 @@ case "$cmd" in
       for wf in "$crew"/lanes/*.workdir; do
         lane=$(basename "$wf" .workdir); wt=$(cat "$wf")
         [ -d "$wt" ] || continue
+        [ -f "$crew/lanes/$lane.readonly" ] && continue   # read-only reviewer sharing a lane worktree
         git -C "$wt" status --porcelain --untracked-files=all | sed -E 's/^.{3}//; s/.* -> //' \
           | grep -vE "$noise" | while read -r path; do
             o=$(owners_of "$path")

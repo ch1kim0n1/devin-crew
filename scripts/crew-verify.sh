@@ -6,7 +6,7 @@
 # 2. Contract freshness: a lane's last DONE line must say `contracts: v<N>` with N = current CONTRACTS.md version.
 #    A lane a bump does not affect is cleared with: crew-verify.sh <project> ack-contract <lane>
 # Exit 1 if any acceptance fails/times out or any lane built against a stale contract.
-# env: CREW_VERIFY_SECS=300 per-command timeout
+# env: CREW_VERIFY_SECS=300 per-command timeout | CREW_VERIFY_IN=proj verify in the project root even for worktree lanes
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
 if [ "${2:-}" = "ack-contract" ]; then   # lane's contracts untouched by the latest bump: no need to wake it just to re-sign
@@ -22,10 +22,10 @@ say() { echo "$*" | tee -a "$log"; }
 trim() { local v=$1; v=${v#"${v%%[![:space:]]*}"}; v=${v%"${v##*[![:space:]]}"}; printf '%s' "$v"; }
 
 # ponytail: no coreutils `timeout` on macOS, so a background sleeper does the killing
-run_limited() { # secs cmd outfile -> exit code (124 = timed out)
+run_limited() { # secs cmd outfile [dir] -> exit code (124 = timed out); runs in dir (default: the project root)
   local p w rc
   rm -f "$3.to"
-  (cd "$proj" && exec bash -c "$2") >"$3" 2>&1 & p=$!
+  (cd "${4:-$proj}" && exec bash -c "$2") >"$3" 2>&1 & p=$!
   ( sleep "$1"; kill -0 "$p" 2>/dev/null || exit 0; : > "$3.to"; kill -TERM "$p" 2>/dev/null; sleep 2; kill -KILL "$p" 2>/dev/null ) 2>/dev/null & w=$!
   disown "$w" 2>/dev/null
   wait "$p"; rc=$?
@@ -45,7 +45,9 @@ if [ -f "$crew/TASKS.md" ]; then
     case "$acc" in ''|-|n/a|N/A) say "SKIP $id $lane: no acceptance command"; continue;; esac
     [ -f "$crew/lanes/$lane.status" ] || { say "SKIP $id $lane: lane not started"; continue; }
     if lane_running "$lane"; then say "SKIP $id $lane: lane still running"; continue; fi
-    run_limited "$secs" "$acc" "$out"; rc=$?
+    # A lane with a worktree is verified INSIDE it (its own work, before and after merge); CREW_VERIFY_IN=proj verifies the shared tree instead.
+    vdir="$proj"; [ "${CREW_VERIFY_IN:-lane}" = lane ] && [ -f "$crew/lanes/$lane.workdir" ] && [ -d "$(cat "$crew/lanes/$lane.workdir")" ] && vdir=$(cat "$crew/lanes/$lane.workdir")
+    run_limited "$secs" "$acc" "$out" "$vdir"; rc=$?
     tasks="$(cd "$(dirname "$0")" && pwd)/crew-tasks.sh"
     if [ "$rc" -eq 0 ]; then bash "$tasks" "$proj" set "$id" "done"; say "PASS $id $lane: $acc"
     elif [ "$rc" -eq 124 ]; then bad=1; bash "$tasks" "$proj" set "$id" failed; say "TIMEOUT $id $lane (>${secs}s): $acc"; tail -n 5 "$out" | sed 's/^/    /' | tee -a "$log"

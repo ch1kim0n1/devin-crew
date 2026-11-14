@@ -10,7 +10,14 @@
 4. `crew-guard.sh <project> baseline "<cmd>"`.
 5. Isolation (`reference/guardrails.md`): worktrees (`crew-worktree.sh add <lane>` for every lane) for a git repo root, else `crew-guard.sh <project> snapshot`.
 
-## Per wave
+## Per wave (conductor path, default)
+
+1. One brief per task: `.devin-crew/prompts/<task-id>.md` (+ optional `<task-id>.role`). `crew-tasks.sh <project> next` lists what is launchable.
+2. `bash S/crew-conduct.sh <project>` and `bash S/crew-router.sh <project>`, both `run_in_background: true`. In `ask` mode show `devin-lane.sh --print` first.
+3. Wait for the conductor's exit line and act on that single reason (see `reference/brain-budget.md`); `crew-conduct.sh <project> --reset <lane>` after you fix a BRAIN lane, then start it again. `crew-conduct.sh <project> --status` is a free peek.
+4. `NEEDS-USER` still goes to the user at once; nothing is retried without their word.
+
+## Per wave (manual path, without the conductor)
 
 1. Write each task as a brief in `.devin-crew/prompts/<lane>-<n>.md`: goal, owned files, contracts, the exact verify command, definition of done, sibling lanes and what they are doing right now. One milestone per lane turn. `crew-tasks.sh <project> next` lists the tasks that can launch.
 2. In `ask` mode show the user what will run: `bash S/devin-lane.sh --print <project> <lane> - <task_file>` prints the exact prompt, rights and command without launching.

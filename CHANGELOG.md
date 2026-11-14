@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0 (2026-11-13)
+
+Brain-token optimization with higher Devin utilization (`reference/brain-budget.md`).
+- `crew-conduct.sh`: autopilot loop. Launches every ready task in parallel, collects exited lanes, resumes them with their own failures, runs a reviewer Devin, merges clean lanes, and exits once with a digest only when the brain is needed (MILESTONE-READY, BRAIN, NEEDS-USER, ORCHESTRATOR-MAIL, BUDGET, STUCK).
+- `crew-collect.sh`: one-call lane digest (acceptance, scope, contract, change size, DONE line, verdict CLEAN/FIX/BRAIN/WAIT, optional merge).
+- `crew-review.sh`: read-only reviewer Devin per lane writing at most 15 one-line findings; `reviewer` role rewritten for it.
+- `crew-verify.sh` runs a worktree lane's acceptance inside its worktree (`CREW_VERIFY_IN=proj` restores the old behavior). `crew-guard.sh` skips read-only reviewer lanes.
+- SKILL.md: conductor-first phase 4, "Brain budget" rules.
+- Tests: 153-check smoke suite (new checks for conductor fix/review/merge/brain/needs-user/stuck paths, collect, review); fake `devin` can write files (`STUB_WRITE`).
+- Known gaps: conductor not yet run against real Devin end to end (only the fake devin and a read-only collect on a real finished lane); Linux container suite not re-run.
+
 ## 1.1.5 (2026-11-11)
 
 - Devin CLI as the manager agent: `reference/devin.md`, `install.sh --devin`; discovery through Devin's Claude importer verified.

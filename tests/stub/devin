@@ -24,6 +24,8 @@ printf 'call=%s resume=%s model=%s perm=%s\n' "$n" "${sid:-no}" "$model" "$perm"
 printf '=== call %s ===\n%s\n' "$n" "$prompt" >> "$STUB_OUT/prompts.log"
 [ -n "${STUB_OUTPUT:-}" ] && echo "$STUB_OUTPUT"
 [ -n "${STUB_SLEEP:-}" ] && sleep "$STUB_SLEEP"
+# STUB_WRITE="<path>::<text>" writes that file (from call number STUB_WRITE_FROM, default 1), like a lane producing output.
+if [ -n "${STUB_WRITE:-}" ] && [ "$n" -ge "${STUB_WRITE_FROM:-1}" ]; then mkdir -p "$(dirname "${STUB_WRITE%%::*}")"; printf '%s\n' "${STUB_WRITE#*::}" > "${STUB_WRITE%%::*}"; fi
 [ -n "${STUB_APPEND_BOARD:-}" ] && echo "$STUB_APPEND_BOARD" >> "$STUB_BOARD"
 [ -n "$export_f" ] && printf '{"session_id":"%s"}\n' "${sid:-stub-session-$n}" > "$export_f"
 exit "${STUB_EXIT:-0}"
