@@ -409,6 +409,13 @@ cp5=$(mkcrew cond-stuck); rm -f "$cp5/.devin-crew/prompts/t2.md"; touch "$cp5/fl
 o=$(STUB_BOARD="$cp5/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cp5" 2>&1)
 ok "conductor: a task without a brief is reported, not silently skipped" 'printf "%s" "$o" | grep -q "^CONDUCT STUCK t2.*no brief for: t2"'
 
+cp7=$(mkcrew cond-mail); bash "$S/lane-msg.sh" "$cp7" send a orchestrator "DONE a: routine report" >/dev/null; bash "$S/lane-msg.sh" "$cp7" send b orchestrator "which port should I use?" >/dev/null
+o=$(STUB_BOARD="$cp7/.devin-crew/BOARD.md" CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cp7" 2>&1)
+ok "conductor: real orchestrator mail ends the run and prints the question" 'printf "%s" "$o" | grep -q "which port should I use" && printf "%s" "$o" | grep -q "^CONDUCT ORCHESTRATOR-MAIL"'
+cp8=$(mkcrew cond-donemail); touch "$cp8/flag.txt"; bash "$S/lane-msg.sh" "$cp8" send a orchestrator "DONE a: routine report" >/dev/null
+o=$(STUB_BOARD="$cp8/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cp8" 2>&1)
+ok "conductor: a routine DONE report does not wake the brain" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY"'
+
 cp6=$(mkcrew collect); touch "$cp6/flag.txt"; STUB_BOARD="$cp6/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" bash "$S/devin-lane.sh" "$cp6" a - "$cp6/.devin-crew/prompts/t1.md" >/dev/null 2>&1
 o=$(bash "$S/crew-collect.sh" "$cp6" a 2>&1); rc=$?
 ok "collect: clean lane -> VERDICT CLEAN, exit 0" '[ "$rc" = 0 ] && printf "%s" "$o" | grep -q "^VERDICT CLEAN" && printf "%s" "$o" | grep -q "PASS t1 a"'

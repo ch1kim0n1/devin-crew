@@ -89,7 +89,13 @@ while :; do
   # 1. things that are never the conductor's to handle
   for nu in "$crew"/lanes/*.needs-user; do [ -e "$nu" ] || continue; l=$(basename "$nu" .needs-user)
     finish_run "NEEDS-USER $l $(head -1 "$nu")"; done
-  om=$(bash "$here/lane-msg.sh" "$proj" pending | awk '$1=="orchestrator"{print $3}'); [ -n "$om" ] && [ "$om" -gt 0 ] && finish_run "ORCHESTRATOR-MAIL $om"
+  # Mail for the orchestrator: a lane's routine DONE report is only logged; anything else is printed in full and ends the run.
+  om=$(bash "$here/lane-msg.sh" "$proj" pending | awk '$1=="orchestrator"{print $3}')
+  if [ -n "$om" ] && [ "$om" -gt 0 ]; then
+    msgs=$(bash "$here/lane-msg.sh" "$proj" read orchestrator)
+    if printf '%s\n' "$msgs" | grep -qv '^\[[^]]* -> orchestrator\] DONE '; then printf '%s\n' "$msgs" | cut -c1-500; finish_run "ORCHESTRATOR-MAIL $om"
+    else ev "orchestrator: $om DONE report(s) logged"; fi
+  fi
   bash "$here/crew-budget.sh" "$proj" check >/dev/null 2>&1; [ $? -eq 2 ] && finish_run BUDGET
   # 2. adopt lanes the brain launched by hand (task running/review/failed, no conductor state)
   for f in "$crew"/lanes/*.status; do [ -e "$f" ] || continue; l=$(basename "$f" .status); case "$l" in *-rev) continue;; esac
