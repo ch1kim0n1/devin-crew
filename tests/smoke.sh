@@ -414,7 +414,7 @@ o=$(STUB_BOARD="$cp7/.devin-crew/BOARD.md" CREW_AUTOREVIEW=0 bash "$S/crew-condu
 ok "conductor: real orchestrator mail ends the run and prints the question" 'printf "%s" "$o" | grep -q "which port should I use" && printf "%s" "$o" | grep -q "^CONDUCT ORCHESTRATOR-MAIL"'
 cp8=$(mkcrew cond-donemail); touch "$cp8/flag.txt"; bash "$S/lane-msg.sh" "$cp8" send a orchestrator "DONE a: routine report" >/dev/null
 o=$(STUB_BOARD="$cp8/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cp8" 2>&1)
-ok "conductor: a routine DONE report does not wake the brain" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY"'
+ok "conductor: a note or DONE report does not wake the brain (and is kept in the notes)" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY"'
 
 cp9=$(mkcrew cond-wt); touch "$cp9/flag.txt"; ( cd "$cp9" && git init -q && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m base ) >/dev/null 2>&1
 bash "$S/crew-worktree.sh" "$cp9" add a >/dev/null 2>&1
