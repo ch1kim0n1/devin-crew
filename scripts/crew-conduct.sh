@@ -144,6 +144,9 @@ while :; do
     if [ ! -s "$crew/prompts/$id.md" ]; then nobrief="$nobrief $id"; continue; fi
     role=implementer; [ -s "$crew/prompts/$id.role" ] && role=$(head -1 "$crew/prompts/$id.role")
     echo 0 > "$cd_dir/$lane.fix"; echo 0 > "$cd_dir/$lane.rev"
+    # Worktree crews: a lane first launched in a later wave gets a worktree cut from the CURRENT merged tree (earlier waves' work included).
+    if [ ! -f "$crew/lanes/$lane.workdir" ] && ls "$crew"/lanes/*.workdir >/dev/null 2>&1 && git -C "$proj" rev-parse --git-dir >/dev/null 2>&1; then
+      bash "$here/crew-worktree.sh" "$proj" add "$lane" >/dev/null 2>&1 && ev "$lane: worktree created from the merged tree"; fi
     launch "$lane" "$crew/prompts/$id.md" "$role" && { running=$((running + 1)); launched_now=1; }
   done < <(bash "$here/crew-tasks.sh" "$proj" next)
   # 6. finished, or stuck?

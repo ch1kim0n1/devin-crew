@@ -416,6 +416,11 @@ cp8=$(mkcrew cond-donemail); touch "$cp8/flag.txt"; bash "$S/lane-msg.sh" "$cp8"
 o=$(STUB_BOARD="$cp8/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cp8" 2>&1)
 ok "conductor: a routine DONE report does not wake the brain" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY"'
 
+cp9=$(mkcrew cond-wt); touch "$cp9/flag.txt"; ( cd "$cp9" && git init -q && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m base ) >/dev/null 2>&1
+bash "$S/crew-worktree.sh" "$cp9" add a >/dev/null 2>&1
+o=$(STUB_BOARD="$cp9/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOREVIEW=0 CREW_MERGE=0 bash "$S/crew-conduct.sh" "$cp9" 2>&1)
+ok "conductor: a later lane gets a worktree cut from the merged tree" '[ -f $cp9/.devin-crew/lanes/b.workdir ] && grep -q "b: worktree created" $cp9/.devin-crew/events.log'
+
 cp6=$(mkcrew collect); touch "$cp6/flag.txt"; STUB_BOARD="$cp6/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" bash "$S/devin-lane.sh" "$cp6" a - "$cp6/.devin-crew/prompts/t1.md" >/dev/null 2>&1
 o=$(bash "$S/crew-collect.sh" "$cp6" a 2>&1); rc=$?
 ok "collect: clean lane -> VERDICT CLEAN, exit 0" '[ "$rc" = 0 ] && printf "%s" "$o" | grep -q "^VERDICT CLEAN" && printf "%s" "$o" | grep -q "PASS t1 a"'
