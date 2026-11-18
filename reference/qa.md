@@ -2,9 +2,11 @@
 
 (`S` = the `scripts/` folder of this skill; see SKILL.md)
 
-Run after **every lane of a milestone has exited** (not while any is `running`), and again over the whole objective after the last milestone. QA is yours. A lane's DONE line is a claim, not evidence.
+**QA is done by a Devin, not by you.** When every task of a milestone is done and merged, `crew-conduct.sh` starts the QA Devin (`bash S/crew-audit.sh <project> qa`, lane `qa-<round>`, role `qa`, read-only on the project, mutations only in a throwaway copy). It works through everything below with evidence per item and writes `.devin-crew/qa/<round>.md`: first line `PASS`, `PASS WITH NOTES` or `FAIL`, at most 15 one-line findings, and for a FAIL up to 8 `FIXTASK: lane | files | acceptance command | goal` lines. The conductor puts that verdict in its digest (`MILESTONE-READY`, or `QA-FAIL`). You read the verdict, nothing else. `CREW_AUTOQA=0` turns this off and makes QA yours again (expensive: avoid).
 
-**The full production checklist is `reference/qa-checklist.md`; it is mandatory for every milestone.** Devins are fast but skip details and big ideas, so nothing is "done" until that checklist has evidence for every item. Start with `bash S/crew-qa.sh <project>` (mechanical net). The list below is the short form of the flow, not a substitute.
+**Your part:** on `QA-FAIL`, turn the FIXTASK lines into TASKS.md rows and briefs (resume the lane that owns the files, or a fresh lane), restart the conductor; QA reruns by itself after the fixes. On a pass, judge the verdict's "least sure" point and whether the result is what the user wanted. After the last milestone, order one more QA Devin over the whole objective (`crew-audit.sh <project> qa`). A lane's DONE line is a claim, not evidence.
+
+**The full production checklist is `reference/qa-checklist.md`; it is mandatory for every milestone** and is what the QA Devin follows. Devins are fast but skip details and big ideas, so nothing is "done" until that checklist has evidence for every item. The list below is the short form, for the QA Devin and for anyone doing QA by hand.
 
 ## Checklist (write results to `.devin-crew/QA.md`, one section per milestone)
 

@@ -47,6 +47,11 @@ if [ -f "$nu" ]; then
 fi
 # One model for every lane: CREW_MODEL, else the first line of <skill>/MODEL, else swe-2-flash-high (free). Anything else asked for is coerced.
 want=${CREW_MODEL:-$(head -1 "$skill_dir/MODEL" 2>/dev/null)}; want=${want:-swe-2-flash-high}
+# Per role (optional, the user's word only): CREW_MODEL_<ROLE> (e.g. CREW_MODEL_QA, CREW_MODEL_ARCHITECT) or a one-line file MODEL.<role> next to this skill.
+if [ -n "${CREW_ROLE:-}" ]; then
+  rv="CREW_MODEL_$(printf '%s' "$CREW_ROLE" | tr '[:lower:]-' '[:upper:]_')"; rm_=${!rv:-$(head -1 "$skill_dir/MODEL.$CREW_ROLE" 2>/dev/null)}
+  [ -n "$rm_" ] && want=$rm_
+fi
 if [ "$model" = "-" ]; then model=$(cat "$model_file" 2>/dev/null) || model=$want; fi
 if [ "$model" != "$want" ] && ! { [ -f "$sid_file" ] && [ "$model" = "$(cat "$model_file" 2>/dev/null)" ]; }; then
   echo "model '$model' not allowed, using $want" >&2; model=$want
@@ -164,14 +169,7 @@ if [ "$timedout" -eq 1 ]; then st="failed(timeout)"
 elif [ -n "$stall_reason" ]; then st="failed(stalled: ${stall_reason%%:*})"
 elif [ "$code" -eq 0 ]; then st="done"
 else st="failed($code)"; fi
-echo "$st" > "$crew/lanes/$lane.status"
-if [ "$task" != "-" ]; then   # a lane that exited ok awaits verification; a failed one is failed
-  if [ "$st" = "done" ]; then bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" running review; else bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" running failed; fi
-fi
-rm -f "$crew/lanes/$lane.pid"
-ev "exit status=$st session=${sid:-unknown} elapsed=$(( $(date +%s) - t0 )) nudges=$attempt"
-echo "lane=$lane status=$st session=${sid:-unknown} log=$log"
-[ "$st" = "done" ] || echo "diagnose: bash $skill_dir/scripts/crew-observe.sh $proj $lane"
+# classify a failure and write .needs-user BEFORE the status becomes visible: the conductor must never see `failed` without its NEEDS-USER
 if [ "$st" != "done" ]; then
   # Which failures are the user's to handle? Limits, login, trust, model, crashes, and exits with no known cause.
   # Stalls and timeouts stay with the orchestrator (nudge / split), unless the log shows a limit-type cause.
@@ -189,6 +187,14 @@ if [ "$st" != "done" ]; then
     echo "ORCHESTRATOR: stop and tell the user now (what failed, the evidence, their fix). They either fix it and say retry, or say retry. Do not relaunch this lane until then; after their word run it with CREW_RETRY_OK=1."
   fi
 fi
+echo "$st" > "$crew/lanes/$lane.status"
+if [ "$task" != "-" ]; then   # a lane that exited ok awaits verification; a failed one is failed
+  if [ "$st" = "done" ]; then bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" running review; else bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" running failed; fi
+fi
+rm -f "$crew/lanes/$lane.pid"
+ev "exit status=$st session=${sid:-unknown} elapsed=$(( $(date +%s) - t0 )) nudges=$attempt"
+echo "lane=$lane status=$st session=${sid:-unknown} log=$log"
+[ "$st" = "done" ] || echo "diagnose: bash $skill_dir/scripts/crew-observe.sh $proj $lane"
 rs=0; case "$mode" in resume*) rs=1;; esac
 bash "$skill_dir/scripts/crew-ledger.sh" turn "$proj" "$lane" "$st" "$(( $(date +%s) - t0 ))" "$attempt" "$rs" "${cls:--}" "${sid:-}"
 if [ "$st" = "done" ]; then exit 0; fi

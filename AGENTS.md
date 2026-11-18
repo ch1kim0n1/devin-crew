@@ -6,4 +6,5 @@ This repo is the `devin-crew` skill (for Claude Code and Codex). Guidance for an
 - Scripts must run on macOS and Linux bash (no GNU-only flags without a BSD fallback).
 - Behavior Claude/Codex follows lives in `SKILL.md` and `reference/`; keep `SKILL.md` short, put detail in `reference/`. After changing those rules, re-run the paper scenarios in `tests/pressure-scenarios.md`.
 - Using the skill rather than editing it? Read `SKILL.md`, and `reference/codex.md` if you are Codex.
-- Never commit `usage/`, `MODEL`, `AUTONOMY`, or any `.devin-crew/` folder.
+- Real-Devin end-to-end test (opt-in, uses your Devin account, needs a folder trusted once): `CREW_E2E=1 bash tests/e2e-real.sh`.
+- Never commit `usage/`, `MODEL`, `MODEL.*`, `AUTONOMY`, or any `.devin-crew/` folder.

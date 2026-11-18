@@ -18,6 +18,9 @@ if [ "$devin_mgr" = 1 ]; then
 fi
 if [ "$codex" = 1 ]; then
   dest=${1:-$HOME/.codex/skills/devin-crew}
+  if [ -d "$dest" ] && [ ! -L "$dest" ] && [ ! -d "$dest/.git" ] && [ -d "$HOME/.claude/skills/devin-crew/.git" ]; then
+    mv "$dest" "$dest.bak.$(date +%s)" && echo "moved the old plain copy aside to $dest.bak.* (it was not updatable)"
+  fi
   if [ ! -e "$dest" ] && [ -d "$HOME/.claude/skills/devin-crew/.git" ]; then
     mkdir -p "$(dirname "$dest")"; ln -s "$HOME/.claude/skills/devin-crew" "$dest"
     echo "linked $dest -> $HOME/.claude/skills/devin-crew. In Codex use \$devin-crew (or /skills). Read reference/codex.md for the sandbox settings."; exit 0

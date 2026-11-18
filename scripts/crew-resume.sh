@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Rebuild the picture of a crew run from files alone (after a context reset, a crash, or reopening the project),
-# and say what to do next. Changes nothing.
+# and say what to do next. Changes nothing (except restarting the conductor wake counter: a resumed session is a fresh one).
 #   bash crew-resume.sh <project>
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
@@ -8,11 +8,13 @@ crew="$proj/.devin-crew"
 here="$(cd "$(dirname "$0")" && pwd)"
 [ -d "$crew" ] || { echo "no crew in $proj: nothing to resume. Start with /devin-crew <goal>."; exit 0; }
 
+rm -f "$crew/conduct/wakes" 2>/dev/null   # a new session starts the conductor wake count over
 echo "=== PLAN (what the user approved) ==="
 if [ -f "$crew/PLAN.md" ]; then cat "$crew/PLAN.md"; else echo "NO PLAN.md: the approved plan is lost. Re-confirm goal, milestones, lanes and git rights with the user before launching anything."; fi
 echo
 echo "=== STATE ==="
 bash "$here/crew-status.sh" "$proj"
+[ -d "$crew/autopilot" ] && bash "$here/crew-autopilot.sh" "$proj" --status | head -6
 [ -f "$crew/QA.md" ] && { echo "last QA verdicts:"; grep -E '^(##|VERDICT|Verdict)' "$crew/QA.md" | tail -6 | sed 's/^/    /'; }
 echo
 echo "=== NEXT ==="

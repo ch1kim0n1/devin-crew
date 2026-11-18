@@ -1,6 +1,6 @@
 # Running devin-crew with Devin CLI as the manager
 
-Devin plays the role Claude plays in SKILL.md: it studies the project, proposes, briefs, watches and QAs. The lanes stay separate `devin -p` worker processes. Everything in SKILL.md applies. `S` = the `scripts/` folder of this skill. The launch, wait and loop mechanics are the ones in `reference/codex.md` sections 2 and 3 (same helpers); this file lists what is specific to Devin.
+Devin plays the role Claude plays in SKILL.md: it studies the project, proposes, briefs and decides; the worker Devins do development, tests, QA and the report (Brain contract in SKILL.md). The lanes stay separate `devin -p` worker processes. Everything in SKILL.md applies. `S` = the `scripts/` folder of this skill. The launch, wait and loop mechanics are the ones in `reference/codex.md` sections 2 and 3 (same helpers); this file lists what is specific to Devin.
 
 **Status.** Checked on this setup (devin 3000.12.43): Devin lists `devin-crew` among its skills when it is installed under `~/.claude/skills`. Written from Devin's docs for the rest. Not yet run: a full crew with Devin as the manager. Trust `crew-doctor.sh` and your tool list over this file where they disagree, and open an issue.
 

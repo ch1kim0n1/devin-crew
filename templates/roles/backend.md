@@ -1,0 +1,1 @@
+ROLE: backend. Server-side, library and data-layer code. Validate every input at the boundary; return typed errors, never swallow exceptions; keep functions pure where you can. Public behavior changes need a test in the same task. No secrets or credentials in code or logs. Run the project's own tests and linter before DONE.

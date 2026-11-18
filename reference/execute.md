@@ -4,17 +4,14 @@
 
 ## First milestone only: set up
 
-1. Preflight: `bash S/crew-doctor.sh <project> --trust`. It checks login, the model, tools, git state, workspace trust. Any FAIL: tell the user the fix and stop. "Not trusted": the user runs `devin` once in the project and accepts; never bypass trust. The check deletes only its own session.
-2. `crew-guard.sh <project> lock`.
-3. Write the coordination files (`reference/setup-files.md`): PLAN.md, TASKS.md, ROSTER.md, CONTRACTS.md, scopes.txt (then `crew-guard.sh <project> scopes`: any `SCOPE OVERLAP` is a planning mistake to fix now), BOARD.md; set the budget with `crew-budget.sh <project> set <minutes>`.
-4. `crew-guard.sh <project> baseline "<cmd>"`.
-5. Isolation (`reference/guardrails.md`): worktrees (`crew-worktree.sh add <lane>` for every lane) for a git repo root, else `crew-guard.sh <project> snapshot`.
+1. Write the coordination files (`reference/setup-files.md`): PLAN.md, TASKS.md, ROSTER.md, CONTRACTS.md, scopes.txt, BOARD.md; set the budget with `crew-budget.sh <project> set <minutes>`.
+2. One call: `bash S/crew-init.sh <project> "<baseline test/build cmd>" --trust`. It runs the preflight (`crew-doctor.sh`: login, model, tools, git state, workspace trust, skill install freshness), the lock, the scope overlap check, the baseline, and isolation (a worktree per lane for a git repo root, else a snapshot), and prints a few lines. `INIT STOP` says why: tell the user the fix. "Not trusted": the user runs `devin` once in the project and accepts; never bypass trust. Details of each step: `reference/guardrails.md`.
 
 ## Per wave (conductor path, default)
 
 1. One brief per task: `.devin-crew/prompts/<task-id>.md` (+ optional `<task-id>.role`). `crew-tasks.sh <project> next` lists what is launchable.
 2. `bash S/crew-conduct.sh <project>` and `bash S/crew-router.sh <project>`, both `run_in_background: true`. In `ask` mode show `devin-lane.sh --print` first.
-3. Wait for the conductor's exit line and act on that single reason (see `reference/brain-budget.md`); `crew-conduct.sh <project> --reset <lane>` after you fix a BRAIN lane, then start it again. `crew-conduct.sh <project> --status` is a free peek.
+3. Wait for the conductor's exit line and act on that single reason (see `reference/brain-budget.md`; the QA Devin runs inside the conductor, so `MILESTONE-READY` already means QA passed and `QA-FAIL` carries the findings); `crew-conduct.sh <project> --reset <lane>` after you fix a BRAIN lane, then start it again. `crew-conduct.sh <project> --status` is a free peek.
 4. `NEEDS-USER` still goes to the user at once; nothing is retried without their word.
 
 ## Per wave (manual path, without the conductor)

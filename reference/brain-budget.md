@@ -10,7 +10,23 @@ Measured on a real run (one session, 9 milestones): about 900 assistant turns, 4
 | Acceptance run in the wrong tree for worktree lanes | `crew-verify.sh` runs a lane's acceptance inside its worktree (`CREW_VERIFY_IN=proj` for the old behavior) |
 | Long session history | Fresh session per milestone: `crew-resume.sh`, `PLAN.md` kept current |
 
+## Measured on a second look (codily run, 1,252 brain turns, Claude Code)
+The brain used 408M cache-read tokens against 211M for all 28 Devin lanes. Where it went: one session never reset (context 95k at turn 1, 669k at the end); 219 build/test/audit runs and 289 greps by the brain itself; 468 manual lane-steering calls (the conductor was never started); 93 plan and 91 wrap-up calls re-reading the full context. A stale Codex install lacked the conductor, collect and reviewer scripts entirely.
+
+| Sink | What changed (1.3.0) |
+|---|---|
+| Brain running tests, audits, builds, edits | Forbidden by the Brain contract: a Devin lane does it (implementer, tests, docs, refactor) |
+| Milestone QA by the brain (checklist, mutation check, diff reading) | `crew-audit.sh qa`: a read-only QA Devin writes the verdict; the conductor starts it and puts it in the digest |
+| Final report written by the brain | `crew-conduct.sh <project> --report`: a reporter Devin writes `REPORT.md` |
+| 6-8 setup calls | `crew-init.sh`: one call |
+| Session never renewed | Conductor prints `FRESH-SESSION` after `CREW_FRESH_AFTER` (12) wakes; `crew-resume.sh` restarts the count |
+| Stale install silently lacks the lanes | `crew-doctor.sh` warns on a missing script; `install.sh --codex` links instead of keeping a copy |
+| Recon, plan, briefs, contracts written by the brain | `crew-plan.sh`: a read-only architect Devin drafts all of it; the brain reads one page and asks at most 3 questions |
+| Brain steering milestone after milestone, fixing QA findings | `crew-autopilot.sh`: milestones, QA, fix rounds, final QA, report, branch + PR in one detached process; the brain wakes once at the end |
+| Did the brain stay a conductor? | `crew-brain-stats.sh <project>`: brain tokens vs Devin tokens, violations (tests/builds/edits by the brain), context size |
+
 ## Rules for the brain
+0. The brain decides and deploys; it never runs project commands or edits project files. If you are about to type `cargo test`, `npm test`, a linter or `sed -i` on project code, write a brief instead.
 1. Start with the digest. `crew-collect.sh` says what is wrong in one line (`VERDICT FIX (acceptance failed)`); act on that, do not reconstruct it.
 2. Read raw code only where a digest or finding points, and only the top few files. Re-read nothing a reviewer cleared unless the area is security, parsing, concurrency or money.
 3. Write briefs once, carefully (exact verify command, owned files, definition of done): a good brief saves more brain tokens than any review step. A planning mistake shows up as `OUTSIDE SCOPE` in collect: fix `scopes.txt` before the next wave.

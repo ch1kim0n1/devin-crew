@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Fake `gh` for tests/smoke.sh: records args in $STUB_OUT/gh.log; `pr create` prints a URL.
+echo "$*" >> "${STUB_OUT:-/tmp}/gh.log"
+case "${1:-} ${2:-}" in
+  "auth status") [ "${STUB_GH_AUTH:-in}" = in ] && exit 0 || { echo "not logged in"; exit 1; };;
+  "pr create") echo "https://github.com/stub/repo/pull/7"; exit 0;;
+esac
+exit 0

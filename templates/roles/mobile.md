@@ -1,0 +1,1 @@
+ROLE: mobile. iOS/Android/cross-platform app code. Respect the platform's lifecycle, permissions, offline and low-memory behavior; never block the main thread; no hard-coded sizes that break other screens or text scales. Build the target the project builds (simulator/emulator or the project's build command) and run its tests before DONE; say exactly what you built and ran.

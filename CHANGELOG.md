@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.4.0 (2026-11-18)
+
+Vague goal in, verified pull request out; a whole team of Devins; the brain only conducts (`reference/autopilot.md`).
+- `crew-plan.sh`: read-only architect Devin drafts recon, questions, spec, plan, milestones, tasks, briefs, scopes, contracts; `check`, `apply`, `go`. Untrusted workspace is caught before anything launches.
+- `crew-autopilot.sh`: detached run of milestones, QA, fix rounds from `FIXTASK` lines, final QA, report, ship; stops with an `ATTENTION` file and a notification; `--detach/--wait/--status/--stop`.
+- `crew-ship.sh`: branch `crew/<slug>`, secrets scan, commit, push, `gh pr create` with the report; refuses without the user's authorization and a QA pass; never main, never force; leaves out the user's pre-existing changes.
+- Team: roles `architect backend frontend mobile database devops debugger` and specialist reviewers `security performance a11y`; `crew-roles.sh` picks a role per task from `templates/roles.map` and the specialists from the change; QA fans out specialists then the QA Devin; per-role models (`CREW_MODEL_<ROLE>`, `MODEL.<role>`).
+- `crew-race.sh`: best-of-2 twin lanes, the conductor keeps the better one (fewer reviewer findings, then smaller diff).
+- `crew-brain-stats.sh`: brain tokens against Devin tokens from the transcripts and ledger, plus Brain-contract violations.
+- Fix: `devin-lane.sh` writes `.needs-user` before the failed status becomes visible (the conductor could see `failed` first and misreport). 
+- One command: `crew-where.sh` reads the project state and the conductor decides what `/devin-crew` (with any words, or none) means: new goal, progress, continue, stop, change, stats. `status`/`resume`/`stats` stay as optional shortcuts. The go is one question (go with PR / go without PR / change). README rewritten around the single command.
+- `tests/e2e-real.sh`: opt-in end-to-end run with the real Devin CLI (needs a folder trusted once). Smoke suite: 205 checks.
+
+## 1.3.0 (2026-11-18)
+
+The brain only conducts: Devins do development, test runs, QA and reporting (`reference/brain-budget.md`, measured on a real 1,252-turn run).
+- `crew-audit.sh`: QA Devin (`qa` role, read-only, verdict in `.devin-crew/qa/<n>.md`) and reporter Devin (`reporter` role, `REPORT.md`).
+- `crew-conduct.sh`: starts the QA Devin after the last task (`CREW_AUTOQA=1`), `MILESTONE-READY` now means QA passed, new `QA-FAIL` digest with FIXTASK lines, `--report`, `FRESH-SESSION` after `CREW_FRESH_AFTER` (12) wakes.
+- `crew-init.sh`: preflight, lock, scope check, baseline and isolation in one call.
+- `crew-doctor.sh` flags a stale or partial skill install; `install.sh --codex` replaces a plain copy with a link (old copy moved aside).
+- SKILL.md: "Brain contract": the brain never runs project tests/builds, edits project files, reads raw diffs or writes QA/report.
+- Tests: 166-check smoke suite.
+
 ## 1.2.0 (2026-11-13)
 
 Brain-token optimization with higher Devin utilization (`reference/brain-budget.md`).

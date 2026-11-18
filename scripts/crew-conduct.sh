@@ -6,21 +6,27 @@
 #   bash crew-conduct.sh <project>                 run until a reason below
 #   bash crew-conduct.sh <project> --status        lane states, no side effects
 #   bash crew-conduct.sh <project> --reset <lane> [state]   clear a lane's BRAIN state after you handled it (default state: launched = re-collect)
-# Needs per task: .devin-crew/prompts/<task-id>.md (the brief); optional <task-id>.role (one word: implementer|tests|docs|refactor), default implementer.
+# Needs per task: .devin-crew/prompts/<task-id>.md (the brief); optional <task-id>.role (a file name in templates/roles/), default: picked from the
+# task's scope globs by crew-roles.sh (backend, frontend, mobile, database, devops, tests, docs, else implementer).
 # Final line (exit 0), one of:
-#   CONDUCT MILESTONE-READY            every task done, every lane merged: run the milestone QA
+#   CONDUCT MILESTONE-READY            every task done, every lane merged, and (CREW_AUTOQA=1) a QA Devin passed: the verdict is printed
+#   CONDUCT QA-FAIL                    the QA Devin failed the milestone: its findings and FIXTASK lines are printed; turn them into tasks
 #   CONDUCT BRAIN <lane>: <why>        needs judgment (scope breach, merge conflict, fixes exhausted, lane failed, launch refused)
 #   CONDUCT NEEDS-USER <lane> <class>  Devin error: tell the user, retry only on their word (CREW_RETRY_OK=1)
 #   CONDUCT ORCHESTRATOR-MAIL <n>      a lane mailed you
 #   CONDUCT BUDGET                     lane-minute budget exceeded
 #   CONDUCT STUCK <ids>                open tasks cannot launch (no brief, or dependencies not done)
 #   CONDUCT TIMEOUT
+# A digest that is the Nth wake of this run (CREW_FRESH_AFTER, default 12) also prints FRESH-SESSION: the brain's context is the cost, so
+# finish the decision, keep PLAN.md current and continue in a new session (/devin-crew resume).
+#   bash crew-conduct.sh <project> --report        launch the reporter Devin, wait for it, print the head of .devin-crew/REPORT.md
 # env: CREW_AUTOFIX=2 fix rounds per lane | CREW_AUTOREVIEW=1 (0 off) | CREW_REVIEW_PASSES=2 | CREW_MERGE=1 (worktree lanes) |
-#      CREW_CONDUCT_MAX_LANES=5 | CREW_CONDUCT_POLL=10 | CREW_CONDUCT_MAX_SECS=7200
+#      CREW_AUTOQA=1 (0 off: the brain runs QA itself, expensive) | CREW_FRESH_AFTER=12 | CREW_CONDUCT_MAX_LANES=5 | CREW_CONDUCT_POLL=10 | CREW_CONDUCT_MAX_SECS=7200
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
 shift; here="$(cd "$(dirname "$0")" && pwd)"; crew="$proj/.devin-crew"; cd_dir="$crew/conduct"; mkdir -p "$cd_dir" "$crew/prompts" "$crew/lanes" "$crew/logs"
 autofix=${CREW_AUTOFIX:-2}; autorev=${CREW_AUTOREVIEW:-1}; passes=${CREW_REVIEW_PASSES:-2}; domerge=${CREW_MERGE:-1}
+autoqa=${CREW_AUTOQA:-1}; fresh_after=${CREW_FRESH_AFTER:-12}
 maxlanes=${CREW_CONDUCT_MAX_LANES:-5}; poll=${CREW_CONDUCT_POLL:-10}; maxsecs=${CREW_CONDUCT_MAX_SECS:-7200}
 ev() { echo "$(date '+%F %T') conductor $*" >> "$crew/events.log"; }
 st_of() { cat "$cd_dir/$1.state" 2>/dev/null; }
@@ -39,7 +45,11 @@ digest() {
     printf '%-12s lane=%-22s conductor=%-9s fixes=%s reviews=%s\n' "$l" "$(lane_st "$l")" "$(st_of "$l")" "$(num "$l" fix)" "$(num "$l" rev)"; done
   bash "$here/crew-budget.sh" "$proj" check | head -1
 }
-finish_run() { echo "CONDUCT $*"; digest; ev "exit: $*"; exit 0; }
+finish_run() { # the one place the brain is woken: count wakes, and say when the session should be renewed
+  local w; w=$(( $(cat "$cd_dir/wakes" 2>/dev/null || echo 0) + 1 )); echo "$w" > "$cd_dir/wakes"
+  echo "CONDUCT $*"; digest
+  [ "$w" -ge "$fresh_after" ] && echo "FRESH-SESSION: $w brain wakes in this run. Handle this one, bring PLAN.md up to date, then tell the user to continue in a new session with /devin-crew resume (every call re-reads the whole history)."
+  ev "exit: $*"; exit 0; }
 
 launch() { # launch <lane> <brief> [role]: detached; records the launch stamp; a refusal becomes a BRAIN state
   local lane=$1 brief=$2 role=${3:-} out="$crew/logs/$1-launch.out"
@@ -57,7 +67,29 @@ fix_lane() { # fix_lane <lane> <kind> <text>: resume the lane with a correction 
   printf 'Your work was checked automatically and needs fixes (%s). Fix ONLY what is listed, re-run your acceptance command, re-read CONTRACTS.md, then post a new DONE line in the exact format.\n\n%s\n' "$kind" "$text" > "$f"
   launch "$lane" "$f"
 }
-merge_lane() {
+race_partner() { local f a b; for f in "$crew"/race/*; do [ -e "$f" ] || continue; read -r a b < "$f"; [ "$a" = "$1" ] && { echo "$b"; return 0; }; [ "$b" = "$1" ] && { echo "$a"; return 0; }; done; return 1; }
+race_score() { # lower is better: reviewer findings weigh most, then the size of the diff
+  local l=$1 h m lo wd ch=0; h=$(grep -ciE '\(high\)|: high' "$crew/reviews/$l.md" 2>/dev/null); m=$(grep -ciE '\(med\)|: med' "$crew/reviews/$l.md" 2>/dev/null); lo=$(grep -ciE '\(low\)|: low' "$crew/reviews/$l.md" 2>/dev/null)
+  wd=$(cat "$crew/lanes/$l.workdir" 2>/dev/null); [ -n "$wd" ] && ch=$(git -C "$wd" diff HEAD --numstat 2>/dev/null | awk '{n+=$1+$2} END{print n+0}')
+  echo $(( ${h:-0} * 100000 + ${m:-0} * 10000 + ${lo:-0} * 1000 + ${ch:-0} ))
+}
+merge_lane() { # best-of-2 lanes wait for their twin; everything else merges at once
+  local lane=$1 p w l sa sb
+  if p=$(race_partner "$lane"); then
+    setst "$lane" raced
+    case "$(st_of "$p")" in
+      raced) sa=$(race_score "$lane"); sb=$(race_score "$p")
+             if [ "$sb" -lt "$sa" ]; then w=$p; l=$lane; else w=$lane; l=$p; fi
+             setst "$l" discarded "lost the race to $w ($sa vs $sb)"; bash "$here/crew-tasks.sh" "$proj" lane "$l" "review|running|failed|open" "done"
+             bash "$here/crew-worktree.sh" "$proj" remove "$l" >/dev/null 2>&1; echo "RACE-WON $w over $l" >> "$cd_dir/notes"
+             do_merge_lane "$w"; return;;
+      brain|discarded) do_merge_lane "$lane"; return;;
+      *) return 0;;
+    esac
+  fi
+  do_merge_lane "$lane"
+}
+do_merge_lane() {
   local lane=$1 m rc
   if [ "$domerge" = 1 ] && [ -f "$crew/lanes/$lane.workdir" ]; then
     m=$(bash "$here/crew-worktree.sh" "$proj" merge "$lane" 2>&1); rc=$?
@@ -75,10 +107,45 @@ after_clean() { # a clean lane: have it reviewed (read-only Devin) or merge it
   fi
   merge_lane "$lane"
 }
+qa_gate() { # all tasks done: have a QA Devin verify the milestone. Returns 0 = passed (fall through to MILESTONE-READY), 1 = keep waiting; exits the run on FAIL.
+  local qs ql v rc
+  qs=$(cat "$cd_dir/qa.state" 2>/dev/null)
+  case "$qs" in
+    passed) return 0;;
+    running)
+      ql=$(cat "$crew/qa/lane" 2>/dev/null)
+      if [ -z "$ql" ] || [ "$(started_of "$ql")" -lt "$(num qa launched)" ]; then   # QA Devin has not started (or was refused)
+        [ $(( $(date +%s) - $(num qa launched) )) -gt 120 ] && { echo failed > "$cd_dir/qa.state"; finish_run "BRAIN qa: the QA Devin never started ($(head -c 200 "$crew/logs/$ql-launch.out" 2>/dev/null | tr '\n' ' '))"; }
+        return 1; fi
+      alive "$ql" && return 1
+      v=$(bash "$here/crew-audit.sh" "$proj" verdict 2>&1); rc=$?
+      printf '%s\n' "$v"
+      case "$rc" in
+        0) echo passed > "$cd_dir/qa.state"; ev "qa passed: $(printf '%s' "$v" | head -1)"; return 0;;
+        1) echo failed > "$cd_dir/qa.state"; finish_run "QA-FAIL $(printf '%s' "$v" | head -1 | cut -c1-120)";;
+        *) echo failed > "$cd_dir/qa.state"; finish_run "BRAIN qa: no usable verdict from $ql (see $crew/logs)";;
+      esac;;
+    specs)   # specialist reviewers (security, a11y, performance) run first and in parallel; the QA Devin folds their findings in
+      for sl in $(cat "$crew/qa/specialist-lanes" 2>/dev/null); do
+        alive "$sl" && return 1
+        [ "$(started_of "$sl")" -lt "$(num qa launched)" ] && [ $(( $(date +%s) - $(num qa launched) )) -lt 120 ] && return 1
+      done
+      date +%s > "$cd_dir/qa.launched"; echo running > "$cd_dir/qa.state"; bash "$here/crew-audit.sh" "$proj" qa >/dev/null 2>&1; ev "qa launched: $(cat "$crew/qa/lane" 2>/dev/null)"; return 1;;
+    *) date +%s > "$cd_dir/qa.launched"
+       if [ -n "$(bash "$here/crew-audit.sh" "$proj" specialists 2>/dev/null)" ]; then echo specs > "$cd_dir/qa.state"; ev "specialists launched: $(cat "$crew/qa/specialist-lanes" 2>/dev/null)"; return 1; fi
+       echo running > "$cd_dir/qa.state"; bash "$here/crew-audit.sh" "$proj" qa >/dev/null 2>&1; ev "qa launched: $(cat "$crew/qa/lane" 2>/dev/null)"; return 1;;
+  esac
+}
 skip_review() { ev "$1 review skipped: $2"; echo "REVIEW-SKIPPED $1 ($2)" >> "$cd_dir/notes"; merge_lane "$1"; }
 
 case "${1:-}" in
   --status) digest; exit 0;;
+  --report)
+    t1=$(date +%s); bash "$here/crew-audit.sh" "$proj" report >/dev/null 2>&1
+    while :; do { alive report || [ "$(started_of report)" -lt "$t1" ]; } || break
+      [ $(( $(date +%s) - t1 )) -ge "$maxsecs" ] && { echo "CONDUCT TIMEOUT (reporter)"; exit 0; }; sleep "$poll"; done
+    if [ -s "$crew/REPORT.md" ]; then echo "CONDUCT REPORT-READY"; head -50 "$crew/REPORT.md"; else echo "CONDUCT BRAIN report: the reporter wrote no REPORT.md (see $crew/logs/report-launch.out)"; fi
+    exit 0;;
   --reset) l=${2:?lane}; setst "$l" "${3:-launched}"; rm -f "${cd_dir:?}/${l:?}.brain" "${cd_dir:?}/${l:?}.reported"; [ "${3:-launched}" = launched ] && echo 0 > "$cd_dir/$l.launched"; echo "reset $l"; exit 0;;
 esac
 
@@ -129,6 +196,9 @@ while :; do
         esac;;
     esac
   done
+  for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; l=$(basename "$f" .state); [ "$(cat "$f")" = raced ] || continue
+    p=$(race_partner "$l") && case "$(st_of "$p")" in brain|discarded) ev "$l: twin $p ended without a result, merging $l"; do_merge_lane "$l";; esac
+  done
   # 4. a lane needing the brain ends the run (other lanes keep running detached)
   for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; l=$(basename "$f" .state)
     if [ "$(cat "$f")" = brain ] && [ ! -f "$cd_dir/$l.reported" ]; then
@@ -143,19 +213,22 @@ while :; do
     case "$(st_of "$lane")" in brain|launched|reviewing) continue;; esac
     [ "$running" -ge "$maxlanes" ] && break
     if [ ! -s "$crew/prompts/$id.md" ]; then nobrief="$nobrief $id"; continue; fi
-    role=implementer; [ -s "$crew/prompts/$id.role" ] && role=$(head -1 "$crew/prompts/$id.role")
+    if [ -s "$crew/prompts/$id.role" ]; then role=$(head -1 "$crew/prompts/$id.role"); else role=$(bash "$here/crew-roles.sh" pick "$proj" "$id" 2>/dev/null); fi   # the team member that fits the files
+    [ -f "$here/../templates/roles/${role:-x}.md" ] || role=implementer
     echo 0 > "$cd_dir/$lane.fix"; echo 0 > "$cd_dir/$lane.rev"
     # Worktree crews: a lane first launched in a later wave gets a worktree cut from the CURRENT merged tree (earlier waves' work included).
     if [ ! -f "$crew/lanes/$lane.workdir" ] && ls "$crew"/lanes/*.workdir >/dev/null 2>&1 && git -C "$proj" rev-parse --git-dir >/dev/null 2>&1; then
       bash "$here/crew-worktree.sh" "$proj" add "$lane" >/dev/null 2>&1 && ev "$lane: worktree created from the merged tree"; fi
-    launch "$lane" "$crew/prompts/$id.md" "$role" && { running=$((running + 1)); launched_now=1; }
+    launch "$lane" "$crew/prompts/$id.md" "$role" && { running=$((running + 1)); launched_now=1; rm -f "$cd_dir/qa.state"; }
   done < <(bash "$here/crew-tasks.sh" "$proj" next)
   # 6. finished, or stuck?
   active=0; for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; case "$(cat "$f")" in launched|reviewing) active=1;; esac; done
   for f in "$crew"/lanes/*.status; do [ -e "$f" ] || continue; alive "$(basename "$f" .status)" && active=1; done
   if [ "$active" -eq 0 ] && [ "$launched_now" -eq 0 ]; then
     left=$(awk -F'|' 'function t(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x} NF>=7 {id=t($2); if(id=="id"||id==""||id ~ /^-/||id ~ /^:/) next; s=(t($NF)=="")?NF-1:NF; if (t($s)!="done") printf "%s ", id}' "$crew/TASKS.md" 2>/dev/null)
-    if [ -z "$left" ]; then [ -s "$cd_dir/notes" ] && cat "$cd_dir/notes"; finish_run MILESTONE-READY; fi
+    if [ -z "$left" ]; then
+      if [ "$autoqa" = 1 ]; then qa_gate || { sleep "$poll"; continue; }; fi
+      [ -s "$cd_dir/notes" ] && cat "$cd_dir/notes"; finish_run MILESTONE-READY; fi
     finish_run "STUCK ${left}${nobrief:+(no brief for:$nobrief)}"
   fi
   sleep "$poll"

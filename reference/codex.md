@@ -41,10 +41,10 @@ or `sandbox_mode = "danger-full-access"` with `approval_policy = "never"` for a 
 3. `crew-wait.sh <project> 300` in a loop. For each line it prints:
    - `LANE-EXIT <lane> <status>`: read its DONE line, guard check, merge, route mail (execute.md "On each lane exit").
    - `NEEDS-USER <lane> <class>`: tell the user now, run `crew-notify.sh`, wait for their word before `CREW_RETRY_OK=1 bash S/crew-launch.sh ...`. A timed retry (`crew-retry-at.sh`) must itself be started with `crew-launch.sh`-style detaching: `nohup bash S/crew-retry-at.sh <project> <lane> auto >/dev/null 2>&1 &`.
-   - `ROUTER ...`: `QUIESCENT` means start QA; `ORCHESTRATOR-MAIL n` means read it and start the router again.
+   - `ROUTER ...`: `QUIESCENT` means the lanes are idle (the conductor starts QA by itself); `ORCHESTRATOR-MAIL n` means read it and start the router again.
    - `WAIT-TIMEOUT`: nothing new; call again.
    - `NOTHING-RUNNING`: all lanes are idle; decide the next wave or QA.
-4. QA, finish and the single final report as in SKILL.md, with `crew-notify.sh` at the end.
+4. QA (the conductor starts the QA Devin), finish and the single final report (`crew-conduct.sh <project> --report`) as in SKILL.md, with `crew-notify.sh` at the end.
 
 If your Codex has multi-agent tools (`spawn_agent`, `wait_agent`), you do not need them here: the workers are Devin processes, not Codex subagents.
 

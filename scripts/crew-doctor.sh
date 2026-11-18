@@ -57,6 +57,21 @@ free=$(df -k "$proj" 2>/dev/null | awk 'NR==2{print $4}')
 [ "${free:-9999999}" -lt 1000000 ] && warn "under 1GB free disk -> worktrees and snapshots may fail"
 
 crew="$proj/.devin-crew"
+# the skill itself: a stale or half-copied install silently loses the token-saving lanes (conductor, QA, reviewer)
+sk="$(cd "$(dirname "$0")/.." && pwd)"; miss=""
+for f in crew-conduct crew-collect crew-review crew-audit crew-init; do [ -f "$sk/scripts/$f.sh" ] || miss="$miss $f.sh"; done
+[ -f "$sk/templates/roles/qa.md" ] || miss="$miss roles/qa.md"
+if [ -n "$miss" ]; then warn "this skill install ($sk) is stale: missing$miss -> update it: git -C $sk pull --ff-only, or re-run install.sh (Codex: install.sh --codex replaces a copy with a link)"
+elif [ ! -d "$sk/.git" ] && [ ! -L "$(dirname "$sk")/$(basename "$sk")" ]; then warn "this skill install is a plain copy (no .git, not a link): it will not update by itself -> re-run install.sh"
+else ok "skill install has the conductor, collect, review, audit and init scripts"; fi
+
+# shipping a PR needs gh; only a note, since the crew works without it
+if grep -qiE '^ship: *yes' "$crew/PLAN.md" 2>/dev/null || [ "${CREW_SHIP_OK:-0}" = 1 ]; then
+  if ! command -v gh >/dev/null 2>&1; then warn "shipping is authorized but gh is not installed -> install it (brew install gh), the run would end without a PR"
+  elif ! gh auth status >/dev/null 2>&1; then warn "shipping is authorized but gh is not logged in -> gh auth login (never done by this skill)"
+  elif ! git -C "$proj" remote get-url origin >/dev/null 2>&1; then warn "shipping is authorized but the repo has no 'origin' remote -> add one"
+  else ok "gh is logged in and a remote exists: the run can end with a pull request"; fi
+fi
 if [ -d "$crew" ]; then
   [ -f "$crew/LOCK" ] && warn "a crew lock is held (.devin-crew/LOCK) -> another crew may be running here; check crew-status.sh, or unlock if it is stale"
   run=0; for f in "$crew"/lanes/*.status; do [ -e "$f" ] && [ "$(cat "$f")" = running ] && run=$((run + 1)); done

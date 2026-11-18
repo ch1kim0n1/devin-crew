@@ -7,7 +7,7 @@ work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 proj="$work/proj"; mkdir -p "$proj/.devin-crew" "$work/out"
 export STUB_OUT="$work/out" STUB_BOARD="$proj/.devin-crew/BOARD.md" PATH="$here/stub:$PATH"
 crew="$proj/.devin-crew"
-export CREW_LEDGER="$work/ledger.tsv" DEVIN_SESSIONS_DB="$work/sessions.db"   # never touch the real ledger or Devin's store
+export CREW_NOTIFY=off CREW_LEDGER="$work/ledger.tsv" DEVIN_SESSIONS_DB="$work/sessions.db"   # never touch the real ledger or Devin's store
 sqlite3 "$DEVIN_SESSIONS_DB" "create table sessions(id text, metadata text); create table message_nodes(session_id text, node_id int, chat_message text, metadata text); create table tool_call_state(session_id text);
 insert into sessions values('stub-session-1','{\"total_acu_cost\":0.5}');
 insert into message_nodes values('stub-session-1',1,'{\"role\":\"assistant\",\"content\":\"aaaaaaaaaaaaaaaaaaaa\"}','{\"num_tokens_preceding\":1000}');
@@ -381,6 +381,7 @@ mkcrew() { # mkcrew <name> -> prints project dir with TASKS for lanes a (accepta
   printf 'task one\n' > "$d/.devin-crew/prompts/t1.md"; printf 'task two\n' > "$d/.devin-crew/prompts/t2.md"; echo "$d"; }
 DONES=$'DONE a: files changed: x | verified: test -> ok | contracts: v1 | open issues for other lanes: none\nDONE b: files changed: y | verified: true -> ok | contracts: v1 | open issues for other lanes: none'
 export CREW_CONDUCT_POLL=0.3 CREW_CONDUCT_MAX_SECS=90
+export CREW_AUTOQA=0   # the QA-lane tests below turn it on; the older conductor tests stop at MILESTONE-READY without a QA Devin
 
 cp1=$(mkcrew cond-clean); touch "$cp1/flag.txt"
 o=$(STUB_BOARD="$cp1/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" bash "$S/crew-conduct.sh" "$cp1" 2>&1)
@@ -420,6 +421,163 @@ cp9=$(mkcrew cond-wt); touch "$cp9/flag.txt"; ( cd "$cp9" && git init -q && git 
 bash "$S/crew-worktree.sh" "$cp9" add a >/dev/null 2>&1
 o=$(STUB_BOARD="$cp9/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOREVIEW=0 CREW_MERGE=0 bash "$S/crew-conduct.sh" "$cp9" 2>&1)
 ok "conductor: a later lane gets a worktree cut from the merged tree" '[ -f $cp9/.devin-crew/lanes/b.workdir ] && grep -q "b: worktree created" $cp9/.devin-crew/events.log'
+
+cpq=$(mkcrew cond-qa); touch "$cpq/flag.txt"
+o=$(STUB_BOARD="$cpq/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" STUB_WRITE="$cpq/.devin-crew/qa/1.md::PASS WITH NOTES : all acceptance green" CREW_AUTOQA=1 CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cpq" 2>&1)
+ok "qa lane: a QA Devin runs after the last task and its verdict rides the MILESTONE-READY digest" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY" && printf "%s" "$o" | grep -q "^PASS WITH NOTES" && [ "$(cat $cpq/.devin-crew/lanes/qa-1.status)" = done ]'
+ok "qa lane: read-only, role qa, brief carries the acceptance commands and the checklist" '[ -f $cpq/.devin-crew/lanes/qa-1.readonly ] && grep -q "ROLE: qa" $STUB_OUT/prompts.log && grep -q "acceptance: test -f" $cpq/.devin-crew/prompts/qa-1.md && grep -q "qa-checklist.md" $cpq/.devin-crew/prompts/qa-1.md'
+cpf=$(mkcrew cond-qafail); touch "$cpf/flag.txt"
+o=$(STUB_BOARD="$cpf/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" STUB_WRITE="$cpf/.devin-crew/qa/1.md::FAIL : no test for the error path" CREW_AUTOQA=1 CREW_AUTOREVIEW=0 CREW_FRESH_AFTER=1 bash "$S/crew-conduct.sh" "$cpf" 2>&1)
+ok "qa lane: a failing verdict ends the run as QA-FAIL with the reason" 'printf "%s" "$o" | grep -q "^CONDUCT QA-FAIL FAIL : no test for the error path"'
+ok "fresh-session: the Nth brain wake says to renew the session" 'printf "%s" "$o" | grep -q "^FRESH-SESSION: 1 brain wakes"'
+bash "$S/crew-audit.sh" "$cpf" verdict >/dev/null 2>&1; rc=$?
+ok "audit verdict: FAIL -> exit 1" '[ "$rc" = 1 ]'
+bash "$S/crew-audit.sh" "$cp3" verdict >/dev/null 2>&1; rc=$?
+ok "audit verdict: none yet -> exit 3" '[ "$rc" = 3 ]'
+o=$(STUB_BOARD="$cpq/.devin-crew/BOARD.md" STUB_WRITE="$cpq/.devin-crew/REPORT.md::report: all milestones PASS" bash "$S/crew-conduct.sh" "$cpq" --report 2>&1)
+ok "report lane: reporter Devin writes REPORT.md and the conductor prints it" 'printf "%s" "$o" | grep -q "^CONDUCT REPORT-READY" && printf "%s" "$o" | grep -q "all milestones PASS" && grep -q "ROLE: reporter" $STUB_OUT/prompts.log'
+
+echo "--- init / stale install"
+ip="$work/initproj"; mkdir -p "$ip/src" "$ip/.devin-crew"; git -C "$ip" init -q; echo x > "$ip/src/a.txt"; git -C "$ip" add -A >/dev/null 2>&1; git -C "$ip" -c user.email=t@t -c user.name=t commit -qm i >/dev/null 2>&1
+printf 'a\tsrc/a*\nb\tsrc/b*\n' > "$ip/.devin-crew/scopes.txt"
+o=$(bash "$S/crew-init.sh" "$ip" "true" 2>&1); rc=$?
+ok "init: lock, baseline and a worktree per lane in one call" '[ "$rc" = 0 ] && printf "%s" "$o" | grep -q "^INIT OK: lanes: a b" && [ -d $ip/.devin-crew/wt/a ] && [ -d $ip/.devin-crew/wt/b ] && [ -f $ip/.devin-crew/LOCK ]'
+ok "init: output stays short" '[ "$(printf "%s\n" "$o" | wc -l | tr -d " ")" -le 8 ]'
+o=$(bash "$S/crew-init.sh" "$work/proj" "true" 2>&1); rc=$?
+ok "init: refuses without scopes.txt" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "INIT STOP"'
+stale="$work/stale-skill"; mkdir -p "$stale/scripts"; cp "$S/crew-doctor.sh" "$stale/scripts/"
+o=$(bash "$stale/scripts/crew-doctor.sh" "$ip" 2>&1)
+ok "doctor: a stale skill install is flagged" 'printf "%s" "$o" | grep -q "WARN this skill install .* is stale: missing"'
+
+echo "--- ship"
+sp="$work/shipproj"; sr="$work/shipremote.git"; git init -q --bare "$sr"; mkdir -p "$sp/src" "$sp/.devin-crew/qa"; git -C "$sp" init -q -b main
+echo old > "$sp/src/a.txt"; echo mine > "$sp/user-wip.txt"; git -C "$sp" add -A >/dev/null; git -C "$sp" -c user.email=t@t -c user.name=t commit -qm init; git -C "$sp" remote add origin "$sr"; git -C "$sp" push -q origin main 2>/dev/null
+echo new > "$sp/src/a.txt"; echo extra > "$sp/src/b.txt"; echo wip2 > "$sp/user-wip.txt"
+printf 'a\tsrc/*\n' > "$sp/.devin-crew/scopes.txt"; printf 'user-wip.txt\n' > "$sp/.devin-crew/prework.files"
+printf '# Objective: add the b module\n' > "$sp/.devin-crew/PLAN.md"; printf 'report body\n' > "$sp/.devin-crew/REPORT.md"
+o=$(bash "$S/crew-ship.sh" "$sp" --print 2>&1)
+ok "ship --print: dry run changes nothing and names the branch" 'printf "%s" "$o" | grep -q "SHIP DRY RUN: branch crew/add-the-b-module" && [ "$(git -C $sp symbolic-ref --short HEAD)" = main ]'
+o=$(bash "$S/crew-ship.sh" "$sp" 2>&1); rc=$?
+ok "ship: refuses without the user's authorization" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "not authorized"'
+o=$(CREW_SHIP_OK=1 bash "$S/crew-ship.sh" "$sp" 2>&1); rc=$?
+ok "ship: refuses without a QA verdict" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "QA verdict"'
+printf 'FAIL : x\n' > "$sp/.devin-crew/qa/1.md"
+o=$(CREW_SHIP_OK=1 bash "$S/crew-ship.sh" "$sp" 2>&1); rc=$?
+ok "ship: refuses a FAIL verdict" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "QA verdict is .FAIL"'
+printf 'PASS : ok\n' > "$sp/.devin-crew/qa/1.md"; printf 'AWS=AKIAABCDEFGHIJKLMNOP\n' > "$sp/src/c.txt"
+o=$(CREW_SHIP_OK=1 bash "$S/crew-ship.sh" "$sp" 2>&1); rc=$?
+ok "ship: secrets scan blocks and shows file:line, not the value" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "possible secret: src/c.txt:1" && ! printf "%s" "$o" | grep -q AKIAABC'
+rm "$sp/src/c.txt"
+o=$(CREW_SHIP_OK=1 bash "$S/crew-ship.sh" "$sp" 2>&1); rc=$?
+ok "ship: branch, commit, push and PR in one call" '[ "$rc" = 0 ] && printf "%s" "$o" | grep -q "^SHIP OK https://github.com/stub/repo/pull/7" && [ "$(git -C $sp symbolic-ref --short HEAD)" = crew/add-the-b-module ] && git -C $sr show-ref --verify -q refs/heads/crew/add-the-b-module'
+ok "ship: PR body is REPORT.md, base is main" 'grep -q "pr create --base main --head crew/add-the-b-module .*--body-file .*REPORT.md" $STUB_OUT/gh.log'
+ok "ship: the user's own prior WIP and .devin-crew stay out of the commit" '! git -C $sp show --name-only --format= HEAD | grep -qE "user-wip|devin-crew" && git -C $sp show --name-only --format= HEAD | grep -q "src/b.txt"'
+ok "ship: never pushed main" '[ "$(git -C $sr rev-parse main)" = "$(git -C $sp rev-parse main)" ]'
+
+echo "--- autopilot"
+FIXDONES="$DONES"$'\nDONE fix1r1-1: files changed: flag.txt | verified: test -f flag.txt -> ok | contracts: v1 | open issues for other lanes: none'
+export CREW_AUTOQA=1 CREW_AUTOREVIEW=0
+ap1=$(mkcrew ap-ms); mkdir -p "$ap1/.devin-crew/milestones"; touch "$ap1/flag.txt"
+printf '# first slice\n| t1 | a | x | - | test -f %s/flag.txt | open |\n' "$ap1" > "$ap1/.devin-crew/milestones/m1.tasks"
+printf '# second slice\n| t2 | b | y | - | true | open |\n' > "$ap1/.devin-crew/milestones/m2.tasks"
+printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n' > "$ap1/.devin-crew/TASKS.md"
+W="$ap1/.devin-crew/qa/1.md::PASS : m1@@@$ap1/.devin-crew/qa/2.md::PASS : m2@@@$ap1/.devin-crew/qa/3.md::PASS : final@@@$ap1/.devin-crew/REPORT.md::report ok"
+o=$(STUB_BOARD="$ap1/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" STUB_WRITE="$W" bash "$S/crew-autopilot.sh" "$ap1" run 2>&1)
+ok "autopilot: two milestones, QA each, a final whole-objective QA, report, then DONE" 'printf "%s" "$o" | grep -q "^DONE:" && [ "$(cat $ap1/.devin-crew/autopilot/loaded | tr "\n" " ")" = "1 2 " ] && [ -f $ap1/.devin-crew/qa/3.md ] && [ -f $ap1/.devin-crew/autopilot/DONE ] && grep -q "FINAL: whole objective" $ap1/.devin-crew/MILESTONE'
+ok "autopilot: without authorization it stops at the report and says so" 'grep -q "not authorized to push" $ap1/.devin-crew/autopilot/DONE'
+ok "autopilot --status reads DONE" 'bash $S/crew-autopilot.sh $ap1 --status | grep -q "^autopilot: DONE"'
+
+ap2=$(mkcrew ap-fix); touch "$ap2/flag.txt"
+FX=$'FAIL : error path untested\nsrc/x:1: high: no test for the error path. add one.\nFIXTASK: new | flag.txt | test -f flag.txt | add the error-path test'
+W="3=$ap2/.devin-crew/qa/1.md::$FX@@@5=$ap2/.devin-crew/qa/2.md::PASS : fixed@@@6>$ap2/.devin-crew/REPORT.md::report ok"
+mkdir -p "$work/o-ap2"; o=$(STUB_OUT="$work/o-ap2" STUB_BOARD="$ap2/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$FIXDONES" STUB_WRITE="$W" bash "$S/crew-autopilot.sh" "$ap2" run 2>&1)
+ok "autopilot: QA-FAIL becomes fix tasks, they run, QA passes, run finishes" 'printf "%s" "$o" | grep -q "^DONE:" && grep -q "fix1r1-1" $ap2/.devin-crew/TASKS.md && [ -s $ap2/.devin-crew/prompts/fix1r1-1.md ] && grep -q "add the error-path test" $ap2/.devin-crew/prompts/fix1r1-1.md && [ "$(cat $ap2/.devin-crew/acceptance/fix1r1-1.sh)" = "test -f flag.txt" ]'
+
+ap3=$(mkcrew ap-same); touch "$ap3/flag.txt"
+W="3=$ap3/.devin-crew/qa/1.md::$FX@@@5=$ap3/.devin-crew/qa/2.md::$FX"
+mkdir -p "$work/o-ap3"; o=$(STUB_OUT="$work/o-ap3" STUB_BOARD="$ap3/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$FIXDONES" STUB_WRITE="$W" bash "$S/crew-autopilot.sh" "$ap3" run 2>&1)
+ok "autopilot: the same QA failure twice stops for a decision, with a notification file" 'printf "%s" "$o" | grep -q "^ATTENTION: QA found the same failures again" && [ -f $ap3/.devin-crew/autopilot/ATTENTION ]'
+
+ap4=$(mkcrew ap-user)
+o=$(STUB_BOARD="$ap4/.devin-crew/BOARD.md" STUB_EXIT=1 STUB_OUTPUT="Error: 429 usage limit reached" bash "$S/crew-autopilot.sh" "$ap4" run 2>&1)
+ok "autopilot: a Devin error stops the run as ATTENTION (never retried)" 'printf "%s" "$o" | grep -q "^ATTENTION: NEEDS-USER" && bash $S/crew-autopilot.sh $ap4 --status | grep -q "^autopilot: ATTENTION"'
+export CREW_AUTOQA=0
+
+echo "--- roles / plan"
+ok "roles: the team is listed (architect, backend, frontend, security, a11y ...)" 'bash $S/crew-roles.sh list | grep -q "^architect" && bash $S/crew-roles.sh list | grep -q "^security" && bash $S/crew-roles.sh list | grep -q "^database"'
+ok "roles: scope globs pick the fitting role" '[ "$(bash $S/crew-roles.sh pick-scope "web/App.tsx web/x.css")" = frontend ] && [ "$(bash $S/crew-roles.sh pick-scope "migrations/001.sql")" = database ] && [ "$(bash $S/crew-roles.sh pick-scope "src/api/* tests/*")" = backend ] && [ "$(bash $S/crew-roles.sh pick-scope "weird/x.zzz")" = implementer ] && [ "$(bash $S/crew-roles.sh pick-scope "tests/*")" = tests ]'
+rp="$work/roleproj"; mkdir -p "$rp/.devin-crew/prompts" "$rp/web"; git -C "$rp" init -q -b main; echo a > "$rp/a.txt"; git -C "$rp" add -A >/dev/null; git -C "$rp" -c user.email=t@t -c user.name=t commit -qm i
+printf 'version: 1\n' > "$rp/.devin-crew/CONTRACTS.md"; : > "$rp/.devin-crew/BOARD.md"; printf 'ui\tweb/App.tsx\n' > "$rp/.devin-crew/scopes.txt"
+printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n| u1 | ui | web/* | - | test -f %s/web/App.tsx | open |\n' "$rp" > "$rp/.devin-crew/TASKS.md"; echo "build the page" > "$rp/.devin-crew/prompts/u1.md"
+ok "roles: specialists follow the change (code -> security, UI -> a11y)" 'echo "x" > $rp/web/App.tsx; [ "$(bash $S/crew-roles.sh specialists $rp)" = "security a11y" ] && [ "$(CREW_SPECIALISTS=none bash $S/crew-roles.sh specialists $rp)" = "" ]'
+mkdir -p "$work/o-role"
+o=$(STUB_OUT="$work/o-role" STUB_BOARD="$rp/.devin-crew/BOARD.md" STUB_APPEND_BOARD="DONE ui: files changed: web/App.tsx | verified: ok | contracts: v1 | open issues for other lanes: none" STUB_WRITE="$rp/.devin-crew/qa/1.md::PASS : fine@@@$rp/.devin-crew/qa/spec/1-security.md::NO FINDINGS@@@$rp/.devin-crew/qa/spec/1-a11y.md::NO FINDINGS" CREW_AUTOQA=1 CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$rp" 2>&1)
+ok "conductor: task roles come from the files (ROLE: frontend)" 'grep -q "ROLE: frontend" $work/o-role/prompts.log'
+ok "conductor: specialists (security, a11y) run before the QA Devin, then MILESTONE-READY" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY" && grep -q "ROLE: security" $work/o-role/prompts.log && grep -q "ROLE: a11y (specialist" $work/o-role/prompts.log && [ -f $rp/.devin-crew/lanes/spec-security-1.status ] && grep -q "Specialist reviewers already looked" $rp/.devin-crew/prompts/qa-1.md'
+export CREW_AUTOQA=0
+
+echo "--- race / brain stats / per-role model"
+rc_=$work/raceproj; mkdir -p "$rc_/src" "$rc_/.devin-crew/prompts"; git -C "$rc_" init -q -b main; echo a > "$rc_/src/a.txt"; git -C "$rc_" add -A >/dev/null; git -C "$rc_" -c user.email=t@t -c user.name=t commit -qm i
+printf 'version: 1\n' > "$rc_/.devin-crew/CONTRACTS.md"; : > "$rc_/.devin-crew/BOARD.md"; printf 'a\tsrc/a.txt\n' > "$rc_/.devin-crew/scopes.txt"
+printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n| r1 | a | src/a.txt | - | true | open |\n' > "$rc_/.devin-crew/TASKS.md"; echo "risky task" > "$rc_/.devin-crew/prompts/r1.md"
+o=$(bash "$S/crew-race.sh" "$rc_" r1 2>&1)
+ok "race: twin row, scopes, brief and worktrees are created" 'printf "%s" "$o" | grep -q "^RACE r1: a vs a-alt" && grep -q "r1-alt | a-alt" $rc_/.devin-crew/TASKS.md && grep -q "^a-alt" $rc_/.devin-crew/scopes.txt && [ -d $rc_/.devin-crew/wt/a-alt ] && grep -q "another Devin solves this same task" $rc_/.devin-crew/prompts/r1-alt.md'
+RD=$'DONE a: files changed: src/a.txt | verified: true -> ok | contracts: v1 | open issues for other lanes: none\nDONE a-alt: files changed: src/a.txt | verified: true -> ok | contracts: v1 | open issues for other lanes: none'
+mkdir -p "$work/o-race"; o=$(STUB_OUT="$work/o-race" STUB_BOARD="$rc_/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$RD" CREW_AUTOQA=0 CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$rc_" 2>&1)
+ok "race: the conductor keeps one twin, discards the other, and finishes the milestone" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY" && printf "%s" "$o" | grep -q "^RACE-WON" && [ "$( (cat $rc_/.devin-crew/conduct/a.state; cat $rc_/.devin-crew/conduct/a-alt.state) | sort | tr "\n" " ")" = "discarded merged " ]'
+
+bash "$S/crew-brain-stats.sh" "$work/proj" >/dev/null 2>&1; ok "brain stats runs on a project with no transcripts" '[ "$(CREW_CLAUDE_PROJECTS=$work/none CREW_CODEX_SESSIONS=$work/none bash $S/crew-brain-stats.sh $work/proj | tail -1)" = "verdict: no brain transcripts found for this project" ]'
+bt="$work/brainproj"; mkdir -p "$bt"; bd="$work/claudeprojects/$(printf '%s' "$(cd "$bt" && pwd -P)" | sed -E 's/[^A-Za-z0-9]/-/g')"; mkdir -p "$bd"
+python3 -I - "$bd/s1.jsonl" <<'PY'
+import json,sys
+rows=[]
+for i,cmd in enumerate(["cargo test --workspace","bash /x/crew-conduct.sh /p","sed -i '' s/a/b/ src/x.rs"]):
+    rows.append({"type":"assistant","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":300000,"cache_creation_input_tokens":0,"output_tokens":50},"content":[{"type":"tool_use","id":str(i),"name":"Bash","input":{"command":cmd}}]}})
+open(sys.argv[1],"w").write("\n".join(json.dumps(r) for r in rows))
+PY
+o=$(CREW_CLAUDE_PROJECTS="$work/claudeprojects" CREW_CODEX_SESSIONS="$work/none" CREW_LEDGER="$work/none.tsv" bash "$S/crew-brain-stats.sh" "$bt" 2>&1)
+ok "brain stats: counts turns and flags brain test runs and edits as contract violations" 'printf "%s" "$o" | grep -q "3 turns" && printf "%s" "$o" | grep -q "VIOLATION run tests/build 1" && printf "%s" "$o" | grep -q "VIOLATION edit files 1" && printf "%s" "$o" | grep -q "^verdict: 2 brain call"'
+
+CREW_ROLE=qa CREW_MODEL_QA=big-model bash "$S/devin-lane.sh" "$proj" qamodel - "$work/task.md" >/dev/null 2>&1
+ok "per-role model: CREW_MODEL_QA applies to the qa role only" '[ "$(cat $crew/lanes/qamodel.model)" = "big-model" ] && [ "$(cat $crew/lanes/mdl.model)" = "my-other-model" ]'
+
+echo "--- where (the one command's router)"
+wp="$work/whereproj"; mkdir -p "$wp"
+w() { bash "$S/crew-where.sh" "$wp" 2>&1; }
+ok "where: an empty project is NO-CREW and the next step is asking for the goal" '[ "$(w | head -1)" = "STATE NO-CREW" ] && w | grep -q "^NEXT: ask the user for the goal"'
+mkdir -p "$wp/.devin-crew/lanes" "$wp/.devin-crew/draft"; echo running > "$wp/.devin-crew/lanes/plan.status"
+ok "where: architect running -> DRAFTING" '[ "$(w | head -1)" = "STATE DRAFTING" ]'
+echo done > "$wp/.devin-crew/lanes/plan.status"; printf '# Objective: speed up parse\n' > "$wp/.devin-crew/draft/PLAN.md"
+ok "where: finished draft -> DRAFT-READY with the goal and the go question" '[ "$(w | head -1)" = "STATE DRAFT-READY" ] && w | grep -q "^GOAL: speed up parse" && w | grep -q "go with a pull request"'
+printf '# Objective: speed up parse\napproved: 2026-11-18\n' > "$wp/.devin-crew/PLAN.md"
+ok "where: approved plan, nothing running -> STOPPED (continue)" '[ "$(w | head -1)" = "STATE STOPPED" ]'
+mkdir -p "$wp/.devin-crew/autopilot"; sleep 30 & slp=$!; echo $slp > "$wp/.devin-crew/autopilot/pid"
+ok "where: live autopilot -> RUNNING" '[ "$(w | head -1)" = "STATE RUNNING" ]'
+kill $slp 2>/dev/null; echo "Devin usage limit" > "$wp/.devin-crew/lanes/api.needs-user"
+ok "where: a lane waiting on the user -> NEEDS-USER" '[ "$(w | head -1)" = "STATE NEEDS-USER" ] && w | grep -q "lane api"'
+rm "$wp/.devin-crew/lanes/api.needs-user"; echo "stop reason" > "$wp/.devin-crew/autopilot/ATTENTION"
+ok "where: autopilot stopped with a reason -> ATTENTION" '[ "$(w | head -1)" = "STATE ATTENTION" ]'
+echo "DONE x" > "$wp/.devin-crew/autopilot/DONE"
+ok "where: finished run -> DONE (relay the report and PR)" '[ "$(w | head -1)" = "STATE DONE" ] && w | grep -q "pull request link"'
+ok "where: at most 5 lines, changes nothing" '[ "$(w | wc -l | tr -d " ")" -le 5 ]'
+
+pp="$work/planproj"; mkdir -p "$pp"; git -C "$pp" init -q -b main; echo a > "$pp/a.py"; git -C "$pp" add -A >/dev/null; git -C "$pp" -c user.email=t@t -c user.name=t commit -qm i
+bash "$S/crew-plan.sh" "$pp" draft "make it faster" --print >/dev/null 2>&1
+ok "plan draft: the architect brief carries the goal, the role catalog and the file formats" 'grep -q "make it faster" $pp/.devin-crew/prompts/plan-1.md && grep -q "frontend" $pp/.devin-crew/prompts/plan-1.md && grep -q "milestones/m1.tasks" $pp/.devin-crew/prompts/plan-1.md && [ ! -f $pp/.devin-crew/lanes/plan.status ]'
+touch "$pp/.devin-crew/trusted"
+o=$(rm -f $pp/.devin-crew/trusted; STUB_OUT="$work/o-trust" STUB_OUTPUT="Error: Refusing to run in an untrusted workspace" bash "$S/crew-plan.sh" "$pp" draft "x" 2>&1); mkdir -p "$work/o-trust"
+ok "plan draft: an untrusted workspace stops before any Devin is launched, with the fix" 'printf "%s" "$o" | grep -q "PLAN STOP: preflight failed" && [ ! -f $pp/.devin-crew/lanes/plan.status ]'
+touch "$pp/.devin-crew/trusted"
+D="$pp/.devin-crew/draft"; PR="$pp/.devin-crew/prompts"
+WF="$D/PLAN.md::# Objective: speed up parse@@@$D/SPEC.md::1. parse is 2x faster@@@$D/CONTRACTS.md::version: 1@@@$D/ROSTER.md::- core (backend): owns a.py@@@$D/scopes.txt::$(printf 'core\ta.py')@@@$D/baseline.cmd::true@@@$D/QUESTIONS.md::NONE@@@$D/milestones/m1.tasks::$(printf '# speed\n| t1 | core | a.py | - | true | open |')@@@$D/prompts/t1.md::make parse faster"
+mkdir -p "$work/o-plan"; STUB_OUT="$work/o-plan" STUB_WRITE="$WF" bash "$S/crew-plan.sh" "$pp" draft "make it faster" >/dev/null 2>&1
+o=$(bash "$S/crew-plan.sh" "$pp" check 2>&1); rc=$?
+ok "plan check: a complete draft validates and summarizes" '[ "$rc" = 0 ] && printf "%s" "$o" | grep -q "^DRAFT: 1 milestone(s), 1 task(s), 1 lane(s)" && printf "%s" "$o" | grep -q "QUESTIONS: none"'
+rm "$D/prompts/t1.md"; o=$(bash "$S/crew-plan.sh" "$pp" check 2>&1); rc=$?
+ok "plan check: a task without a brief is a problem" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "PROBLEM: t1: no brief"'
+echo "make parse faster" > "$D/prompts/t1.md"
+o=$(bash "$S/crew-plan.sh" "$pp" apply --ship 2>&1)
+ok "plan apply: plan, scopes, briefs and milestones in place; ship authorized in PLAN.md" 'printf "%s" "$o" | grep -q "^PLAN APPLIED" && grep -q "^ship: yes" $pp/.devin-crew/PLAN.md && [ -s $pp/.devin-crew/prompts/t1.md ] && [ -f $pp/.devin-crew/milestones/m1.tasks ] && grep -q "^| id " $pp/.devin-crew/TASKS.md && grep -q "^core" $pp/.devin-crew/scopes.txt'
 
 cp6=$(mkcrew collect); touch "$cp6/flag.txt"; STUB_BOARD="$cp6/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" bash "$S/devin-lane.sh" "$cp6" a - "$cp6/.devin-crew/prompts/t1.md" >/dev/null 2>&1
 o=$(bash "$S/crew-collect.sh" "$cp6" a 2>&1); rc=$?

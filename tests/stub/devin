@@ -25,7 +25,16 @@ printf '=== call %s ===\n%s\n' "$n" "$prompt" >> "$STUB_OUT/prompts.log"
 [ -n "${STUB_OUTPUT:-}" ] && echo "$STUB_OUTPUT"
 [ -n "${STUB_SLEEP:-}" ] && sleep "$STUB_SLEEP"
 # STUB_WRITE="<path>::<text>" writes that file (from call number STUB_WRITE_FROM, default 1), like a lane producing output.
-if [ -n "${STUB_WRITE:-}" ] && [ "$n" -ge "${STUB_WRITE_FROM:-1}" ]; then mkdir -p "$(dirname "${STUB_WRITE%%::*}")"; printf '%s\n' "${STUB_WRITE#*::}" > "${STUB_WRITE%%::*}"; fi
+# Several files: separate the entries with @@@ (optional per-entry call filter: 3=path::text, 3>path::text).
+if [ -n "${STUB_WRITE:-}" ] && [ "$n" -ge "${STUB_WRITE_FROM:-1}" ]; then
+  rest=$STUB_WRITE
+  while [ -n "$rest" ]; do
+    ent=${rest%%@@@*}; if [ "$ent" = "$rest" ]; then rest=""; else rest=${rest#*@@@}; fi
+    # an entry may start with "N=" (only on call N) or "N>" (from call N on)
+    case "$ent" in [0-9]*=*) [ "$n" = "${ent%%=*}" ] || continue; ent=${ent#*=};; [0-9]*">"*) [ "$n" -ge "${ent%%>*}" ] || continue; ent=${ent#*>};; esac
+    mkdir -p "$(dirname "${ent%%::*}")"; printf '%s\n' "${ent#*::}" > "${ent%%::*}"
+  done
+fi
 [ -n "${STUB_APPEND_BOARD:-}" ] && echo "$STUB_APPEND_BOARD" >> "$STUB_BOARD"
 [ -n "$export_f" ] && printf '{"session_id":"%s"}\n' "${sid:-stub-session-$n}" > "$export_f"
 exit "${STUB_EXIT:-0}"

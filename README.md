@@ -1,21 +1,28 @@
 # devin-crew
 
-**Make Claude Code the manager of a crew of headless [Devin CLI](https://devin.ai) agents.**
-You set the goal and approve the plan. Claude studies your project, proposes how many Devins to use and why, briefs them, watches them, merges their work and QAs it before it tells you anything is done.
+**One command. Claude Code (or Codex) conducts a whole team of headless [Devin CLI](https://devin.ai) agents: you give a goal, they plan, build, test, review and open the pull request.**
+
+```
+/devin-crew add dark mode to the settings page
+```
+
+That is the whole interface. It asks at most three questions, shows you a one-page plan, and waits for one answer: *go, open a PR when done* / *go, no PR* / *change the plan*. Then you can walk away; you hear back when it is finished or when it truly needs you. Type `/devin-crew` again any time (even with no words) and it tells you where things stand and carries on.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/ch1kim0n1/devin-crew)](https://github.com/ch1kim0n1/devin-crew/releases)
 ![Agents](https://img.shields.io/badge/manager-Claude%20Code%20%7C%20Codex%20%7C%20Devin-informational)
 ![Platforms](https://img.shields.io/badge/macOS%20%E2%9C%93%20%7C%20Linux%20(offline%20tests)-lightgrey)
 
-[Install](#install) · [Let Claude install and adapt it](#let-claude-install-and-adapt-it) · [How it works](#how-it-works) · [Commands](#commands) · [Safety](#safety-read-this-first) · [Configuration](#configuration) · [FAQ](#faq)
+[Install](#install) · [Let Claude install and adapt it](#let-claude-install-and-adapt-it) · [How it works](#how-it-works) · [Using it](#using-it) · [Safety](#safety-read-this-first) · [Configuration](#configuration) · [FAQ](#faq)
 
 ```
-   YOU            decide: the plan, the scope, how many workers, every change to them
+   YOU            one command: /devin-crew <what you want>. Say go. That is all.
     |
-  CLAUDE          the brain and messenger: studies the project, proposes a breakdown,
-    |             briefs the workers, routes their mail, watches them, QAs their work
- DEVIN, DEVIN…    workers: take tasks from Claude, nothing else
+  CONDUCTOR       Claude / Codex: decides, asks you at most three questions, deploys Devins,
+    |             wakes only when something needs you (it never builds, tests or reviews itself)
+ A TEAM OF        architect, backend, frontend, mobile, database, devops, tests, docs, QA,
+ DEVINS           security / performance / a11y reviewers, reporter: they plan, build, test,
+                  review, report, and open the pull request
 ```
 
 Works with **Claude Code** (primary, tested with real runs), **Codex** (`$devin-crew`; see [Codex](#codex)) and **Devin CLI itself** (`/devin-crew`; see [Devin as the manager](#devin-as-the-manager)) as the manager agent. The workers are always Devin CLI agents.
@@ -26,36 +33,36 @@ One agent works through a big job one thing at a time. Several agents on one fol
 
 devin-crew gives you the parallelism without those problems:
 
-- **You stay in charge.** Nothing launches before you say go. Claude recommends, you decide: lanes, scope, budget, git rights.
+- **You stay in charge.** No worker touches your project before you say go (only the read-only architect looks). The conductor recommends, you decide: the plan, scope, and whether a PR is opened.
 - **Lanes don't collide.** Each Devin gets its own git worktree (or a shared tree with a snapshot), owned files, versioned contracts for shared interfaces, and a mailbox to talk to the others.
 - **Hangs get caught.** A watchdog reads Devin's own session store and process tree, kills hung commands, nudges stuck lanes, and enforces time and lane-minute budgets.
 - **Devin errors reach you.** A usage limit, login or trust problem stops that lane, Claude tells you with the evidence and your fix, and nothing retries until you say so. If the message gives a reset time, Claude can retry at that time with your permission.
-- **Work is checked, not trusted.** Every milestone goes through acceptance reruns, a mutation spot-check of the tests, a requirement matrix, edge and error paths, security, docs, an end-to-end run and an independent reviewer lane.
-- **It survives a context reset.** The approved plan lives in `.devin-crew/PLAN.md`; `/devin-crew resume` rebuilds the picture from files.
+- **Vague goal in, pull request out.** Give a goal; an architect Devin drafts the plan, the conductor asks at most three questions, you say go (and whether it may open a PR), and an autopilot runs milestones, QA with specialist reviewers, fix rounds, a final QA and the report, then pushes a `crew/<slug>` branch and opens the PR. Never main, never forced, secrets scanned.
+- **A whole team of Devins.** Roles for backend, frontend, mobile, database, devops, debugging, tests, docs, refactoring, architecture, review, QA, reporting and security/performance/a11y specialists; the role is picked from the files a task touches. Risky tasks can race two Devins and keep the better result.
+- **Work is checked, not trusted, and not by the expensive model.** Every milestone goes through acceptance reruns, a mutation spot-check of the tests, a requirement matrix, edge and error paths, security, docs, an end-to-end run and an independent reviewer lane. A QA Devin runs all of it and a reporter Devin writes the final report; the Claude/Codex brain only decides, talks to you and deploys Devins.
+- **It survives a context reset.** The approved plan lives in `.devin-crew/PLAN.md`; typing `/devin-crew` again rebuilds the picture from files and carries on.
 
 ## How it works
 
-1. **Recon** (read-only) and **proposal in one reply**, opening with the Devin count: `3 Devins: api (src/api/*), ui (web/*), tests (tests/*) because …`, plus milestones, contracts, QA plan, git rights and a budget.
-2. **You revise and say go.** Your edits win.
-3. **Execute** per milestone: briefs, lanes launched in the background together with a mail router, watchdog on every lane.
-4. **QA** after all lanes of a milestone exit. Any open HIGH is a FAIL and goes back to the lanes.
-5. **One final report**, plus a push notification, so you can walk away.
+1. **You type one command with a goal.** The conductor checks where the project stands, then has a read-only architect Devin study the project and draft the plan (recon, testable acceptance criteria, milestones, tasks, briefs, who owns which files).
+2. **At most three questions, one go.** The conductor shows a one-page plan opening with the Devin count and why. You answer: *go, open a PR when done* / *go, no PR* / *change the plan*. Your edits win.
+3. **The autopilot runs it.** Per milestone: Devins build in isolated worktrees, a reviewer checks each lane, specialists (security, a11y, performance) and a QA Devin verify the milestone, failures become fix tasks, then a final QA over the whole goal.
+4. **One report, one PR.** A reporter Devin writes the report; the conductor pushes a `crew/<name>` branch and opens the pull request (only if you said so). You are notified once, or earlier if a Devin error needs you.
 
 Example (illustrative, abridged):
 
 ```
 you:    /devin-crew add rate limiting to the API, with tests and docs
-claude: [reads the repo; creates nothing]
-        PROPOSAL: 3 Devins
-          api   src/api/ratelimit/*, src/api/middleware.ts   the limiter and its wiring
-          tests tests/ratelimit/*                            tests against the contract, not the code
-          docs  docs/api.md                                  usage and limits
-        Contract v1: RateLimiter.check(key) -> {allowed, retryAfter}   owner: api, consumer: tests, docs
-        Isolation: worktrees. Budget: 45 lane-minutes. Git: none. QA: acceptance + mutation check + reviewer lane.
-        Earlier crews of yours: median 40 lane-minutes, one stall.
-        Go?
-you:    go, but no docs lane, I'll write them
-claude: Plan updated to 2 Devins. Writing .devin-crew/PLAN.md and launching…
+claude: Studying the project... (a Devin drafts the plan; nothing is changed yet)
+        PLAN: 3 Devins - api (limiter + wiring), tests (against the contract), docs.
+        Done means: 1) limiter returns allowed/retryAfter  2) 429 on the API  3) tests + docs.
+        One question: per API key or per IP? (default: per API key)
+you:    per key
+claude: Go, open a PR when done / Go, no PR / Change the plan?
+you:    go, open a PR
+claude: Running. I will tell you when it is finished or if it needs you.
+  ...later...
+claude: Done. QA passed, 2 notes. PR: https://github.com/you/api/pull/42
 ```
 
 ## Install
@@ -139,15 +146,17 @@ Clone this repo to a temp folder, run /devin-crew on the clone with a small goal
 and show me the proposal before launching anything.
 ```
 
-## Commands
+## Using it
 
-| You type | What happens |
+There is one command, and you never have to remember options. Type `/devin-crew` (in Codex, `$devin-crew`) and say what you want in your own words:
+
+| You say | What happens |
 |---|---|
-| `/devin-crew` | Heads-up only: what it does, current autonomy, asks for your goal. Runs nothing. |
-| `/devin-crew <goal>` | Recon and proposal in one reply, then plan with you, execution and QA |
-| `/devin-crew status` | Live state of every lane |
-| `/devin-crew resume` | Rebuild a half-done crew from `.devin-crew/` and continue |
-| `/devin-crew stats` | How you have used Devin across projects: time, tasks, tokens, QA, fun facts. Add `viz` for an HTML report with charts |
+| `/devin-crew <a goal, however vague>` | A read-only architect Devin studies the project and drafts the plan. You answer up to three questions, then say go. The crew builds, tests, reviews, and (if you said so) opens a pull request. |
+| `/devin-crew` (nothing) | If a crew exists it reports where things stand and continues; if not, it asks what the crew should work on. |
+| `/devin-crew how is it going` / `continue` / `stop` / `also do X` / `how much have I used Devin` | Understood in plain words; no special syntax. |
+
+Shortcuts like `status`, `resume`, `stats` still work, but nothing requires them. Under the hood the conductor reads the project's state (`scripts/crew-where.sh`) and decides what your words mean.
 
 Dry run any launch with `bash scripts/devin-lane.sh --print <project> <lane> - <task_file>`: it prints the exact prompt, rights and command and starts nothing.
 

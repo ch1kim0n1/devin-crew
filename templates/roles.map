@@ -1,0 +1,8 @@
+# role<TAB>space-separated shell glob patterns (case-style; * also matches /). First matching role in file order wins per scope glob.
+database	*migrations/* *migrate/* *.sql *schema.prisma *alembic/* *models/migrations*
+devops	.github/* Dockerfile* *docker-compose* *Makefile *.tf *helm/* *k8s/* *terraform/* *.gitlab-ci.yml *Jenkinsfile
+mobile	*.swift *.kt *.dart *android/* *ios/* *.xcodeproj* *Podfile *build.gradle*
+frontend	*.tsx *.jsx *.vue *.svelte *.css *.scss *.html *components/* *pages/* *public/* *static/*
+tests	*test* *spec* *__tests__/* *e2e/*
+docs	*.md *docs/* *.rst
+backend	*.py *.go *.rs *.java *.rb *.php *.cs *.ts *.js *api/* *server/* *services/* *src/*
