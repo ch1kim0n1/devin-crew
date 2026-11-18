@@ -436,6 +436,11 @@ o=$(bash "$S/crew-review.sh" "$cp6" a --findings 2>&1); rc=$?
 ok "review --findings counts severities, exit 1 on high/med" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "REVIEW a: high=1 med=0"'
 unset CREW_CONDUCT_POLL CREW_CONDUCT_MAX_SECS
 
+cp10=$(mkcrew verify-open); touch "$cp10/flag.txt"; STUB_BOARD="$cp10/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" bash "$S/devin-lane.sh" "$cp10" a - "$cp10/.devin-crew/prompts/t1.md" >/dev/null 2>&1
+printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n| t1 | a | x | - | true | review |\n| t9 | a | y | t1 | true | open |\n' > "$cp10/.devin-crew/TASKS.md"
+v=$(bash "$S/crew-verify.sh" "$cp10" a 2>&1)
+ok "verify: an open (never launched) task is not marked done by a passing acceptance command" 'printf "%s" "$v" | grep -q "^SKIP t9 a: task not started" && printf "%s" "$v" | grep -q "^PASS t1 a" && grep -q "| t9 | a | y | t1 | true | open" $cp10/.devin-crew/TASKS.md'
+
 echo "--- report"
 rep=$(bash "$S/crew-report.sh" "$proj")
 ok "report lists lanes with counts" 'printf "%s" "$rep" | grep -Eq "^api +1 +[0-9]+" && printf "%s" "$rep" | grep -q "failed(3)"'

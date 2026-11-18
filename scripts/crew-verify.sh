@@ -38,13 +38,15 @@ lane_running() { [ "$(cat "$crew/lanes/$1.status" 2>/dev/null)" = running ]; }
 
 if [ -f "$crew/TASKS.md" ]; then
   out=$(mktemp)
-  while IFS='|' read -r _ id lane _ _ acc _; do
-    id=$(trim "$id"); lane=$(trim "$lane"); acc=$(trim "$acc")
+  while IFS='|' read -r _ id lane _ _ acc tstatus _; do
+    id=$(trim "$id"); lane=$(trim "$lane"); acc=$(trim "$acc"); tstatus=$(trim "$tstatus")
     case "$id" in ''|id|-*|:*) continue;; esac
     [ -n "$only" ] && [ "$lane" != "$only" ] && continue
     case "$acc" in ''|-|n/a|N/A) say "SKIP $id $lane: no acceptance command"; continue;; esac
     [ -f "$crew/lanes/$lane.status" ] || { say "SKIP $id $lane: lane not started"; continue; }
     if lane_running "$lane"; then say "SKIP $id $lane: lane still running"; continue; fi
+    # a task that never launched (status open) is not verified: its acceptance command can pass before any work was done
+    [ "$tstatus" = open ] && { say "SKIP $id $lane: task not started (open)"; continue; }
     # A lane with a worktree is verified INSIDE it (its own work, before and after merge); CREW_VERIFY_IN=proj verifies the shared tree instead.
     vdir="$proj"; [ "${CREW_VERIFY_IN:-lane}" = lane ] && [ -f "$crew/lanes/$lane.workdir" ] && [ -d "$(cat "$crew/lanes/$lane.workdir")" ] && vdir=$(cat "$crew/lanes/$lane.workdir")
     run_limited "$secs" "$acc" "$out" "$vdir"; rc=$?
