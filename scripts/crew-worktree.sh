@@ -38,6 +38,12 @@ case "$cmd" in
     ;;
   merge)
     [ -d "$wt" ] || { echo "no worktree for $lane" >&2; exit 1; }
+    # After a file lands in the main tree, commit it in the worktree as the new base, so the lane's next change to it
+    # diffs from what main now holds (otherwise its second merge of the same file conflicts with its own first one).
+    advance_base() {
+      [ $# -gt 0 ] || return 0
+      git -C "$wt" add -A -- "$@" && git -C "$wt" -c user.name=crew -c user.email=crew@local commit -q --no-verify -m "crew base (post-merge)" -- "$@" >/dev/null 2>&1 || true
+    }
     excl=(); for l in $links; do excl+=(":!$l"); done
     excl+=(":(exclude,glob)**/__pycache__/**" ":(exclude,glob)**/*.pyc" ":(exclude,glob)**/.DS_Store")
     git -C "$wt" add -N -- . "${excl[@]}" 2>/dev/null
@@ -50,19 +56,22 @@ case "$cmd" in
     git -C "$wt" diff HEAD --binary -- "${globs[@]}" > "$patch"
     if [ ! -s "$patch" ]; then echo "$lane: no changes"; exit 0; fi
     if git -C "$proj" apply --check "$patch" 2>/tmp/crew-apply.err; then
-      git -C "$proj" apply "$patch" && echo "$lane: merged ($(grep -c '^diff --git' "$patch") files), uncommitted"
+      git -C "$proj" apply "$patch" || exit 1
+      advance_base $(git -C "$wt" diff HEAD --name-only -- "${globs[@]}")
+      echo "$lane: merged ($(grep -c '^diff --git' "$patch") files), uncommitted"
     else
       # Whole patch does not apply: apply every file that does, list the ones that conflict so they can be reconciled by hand.
-      ok=0; conflicts=""
+      ok=0; conflicts=""; done_files=()
       while IFS= read -r f; do
         [ -z "$f" ] && continue
         # already in the main tree (an earlier merge of this lane applied it): nothing to do, not a conflict
-        if { [ -e "$wt/$f" ] && cmp -s "$wt/$f" "$proj/$f"; } || { [ ! -e "$wt/$f" ] && [ ! -e "$proj/$f" ]; }; then ok=$((ok + 1)); continue; fi
+        if { [ -e "$wt/$f" ] && cmp -s "$wt/$f" "$proj/$f"; } || { [ ! -e "$wt/$f" ] && [ ! -e "$proj/$f" ]; }; then ok=$((ok + 1)); done_files+=("$f"); continue; fi
         git -C "$wt" diff HEAD --binary -- "$f" > "$patch.one"
-        if git -C "$proj" apply --check "$patch.one" 2>/dev/null; then git -C "$proj" apply "$patch.one"; ok=$((ok + 1))
+        if git -C "$proj" apply --check "$patch.one" 2>/dev/null; then git -C "$proj" apply "$patch.one"; ok=$((ok + 1)); done_files+=("$f")
         else conflicts="$conflicts$f"$'\n'; fi
       done < <(git -C "$wt" diff HEAD --name-only -- "${globs[@]}")
       rm -f "$patch.one"
+      advance_base ${done_files[@]+"${done_files[@]}"}
       [ -z "$conflicts" ] && { echo "$lane: merged ($ok file(s); some were already in the main tree), uncommitted"; exit 0; }
       echo "$lane: PARTIAL merge: $ok file(s) applied, the rest CONFLICT with changes already in the main tree:"
       printf '%s' "$conflicts" | while IFS= read -r f; do [ -n "$f" ] && echo "  $f   (lane's version: $wt/$f)"; done

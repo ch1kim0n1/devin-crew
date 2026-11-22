@@ -90,4 +90,16 @@ echo b2 > "$W/x/g.js"                                                           
 out=$(bash "$SK/scripts/crew-worktree.sh" "$P" merge L 2>&1); rc=$?
 [ $rc -eq 0 ] && [ "$(cat "$P/x/g.js")" = b2 ] && [ "$(cat "$P/x/f.js")" = a2 ] && ok "bug11: second merge applies new work, skips already-merged files" || bad "bug11: rc=$rc out=$out"
 
+# ---- bug 12: the worktree base advances after a merge, so a lane can change the same file again (and a file it created)
+P=$T/p12; mkdir -p "$P/x"; git -C "$P" init -q; echo a > "$P/x/f.js"; git -C "$P" add -A; git -C "$P" -c user.name=t -c user.email=t@t commit -qm base
+mkdir -p "$P/.devin-crew/lanes"; printf 'L\tx/**\n' > "$P/.devin-crew/scopes.txt"
+bash "$SK/scripts/crew-worktree.sh" "$P" add L >/dev/null 2>&1
+W=$P/.devin-crew/wt/L; echo a2 > "$W/x/f.js"; echo n1 > "$W/x/n.js"; bash "$SK/scripts/crew-worktree.sh" "$P" merge L >/dev/null 2>&1   # first merge
+echo a3 > "$W/x/f.js"; echo n2 > "$W/x/n.js"                                                                                           # next task, same files
+out=$(bash "$SK/scripts/crew-worktree.sh" "$P" merge L 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(cat "$P/x/f.js")" = a3 ] && [ "$(cat "$P/x/n.js")" = n2 ] && ok "bug12: second merge of the same files applies (base advanced)" || bad "bug12: rc=$rc out=$out"
+echo x > "$P/x/f.js"; echo a4 > "$W/x/f.js"                                                                                            # outside edit in main
+out=$(bash "$SK/scripts/crew-worktree.sh" "$P" merge L 2>&1); rc=$?
+[ $rc -ne 0 ] && [ "$(cat "$P/x/f.js")" = x ] && ok "bug12: an outside edit in main still conflicts, nothing overwritten" || bad "bug12 outside: rc=$rc out=$out"
+
 rm -rf "$T"; [ $fail -eq 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
