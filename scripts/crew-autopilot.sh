@@ -75,6 +75,7 @@ fix_tasks() { # QA-FAIL: FIXTASK lines of the newest verdict -> task rows, brief
     acc=""; for ((i = 2; i < n - 1; i++)); do acc="${acc:+$acc|}${p[$i]}"; done; acc=$(trim "$acc")
     id="fix${m}r${r}-$k"
     if [ "$lane" = new ] || [ -z "$lane" ] || ! grep -q "^$lane	" "$crew/scopes.txt" 2>/dev/null; then lane="fix${m}r${r}-$k"; fi
+    [ -n "$(tail -c1 "$crew/scopes.txt" 2>/dev/null)" ] && echo >> "$crew/scopes.txt"
     for g in $(printf '%s' "$files" | tr ',' ' '); do printf '%s\t%s\n' "$lane" "$g" >> "$crew/scopes.txt"; done
     printf '%s\n' "$acc" > "$crew/acceptance/$id.sh"
     printf '| %s | %s | %s | - | bash %s | open |\n' "$id" "$lane" "$(printf '%s' "$files" | tr ',' ' ')" "$crew/acceptance/$id.sh" >> "$crew/TASKS.md"

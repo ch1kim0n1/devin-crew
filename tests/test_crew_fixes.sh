@@ -61,4 +61,24 @@ else
 fi
 bash "$SK/scripts/crew-conduct.sh" "$P" --reset L 2>&1 | grep -q "crew-lane-reset" && ok "bug3: --reset output points to crew-lane-reset.sh" || bad "bug3: --reset does not say it only resets conductor state"
 
+# ---- bug 8: scopes.txt without a final newline must not hide its last line
+P=$T/p8; mkdir -p "$P/.devin-crew"; printf 'A\ta/**\nB\ta/**' > "$P/.devin-crew/scopes.txt"
+bash "$SK/scripts/crew-guard.sh" "$P" scopes 2>&1 | grep -q "SCOPE OVERLAP: A" && ok "bug8: last scope line read without a final newline" || bad "bug8: last scope line ignored"
+
+# ---- bug 9: a tests-lane task with no depends next to the code it tests is a plan problem
+mkdraft() { local d=$1/.devin-crew/draft; mkdir -p "$d/milestones" "$d/prompts"
+  echo "# Objective: x" > "$d/PLAN.md"; echo "1. x" > "$d/SPEC.md"; echo "version: 1" > "$d/CONTRACTS.md"; echo NONE > "$d/QUESTIONS.md"; echo true > "$d/baseline.cmd"
+  printf -- '- core (backend): owns src/**\n- tests (tests): owns tests/**\n' > "$d/ROSTER.md"; printf 'core\tsrc/**\ntests\ttests/**\n' > "$d/scopes.txt"
+  printf '# M1\n| t1 | core | src/a.py | - | true | open |\n| t2 | tests | tests/test_a.py | %s | true | open |\n' "$2" > "$d/milestones/m1.tasks"
+  echo b > "$d/prompts/t1.md"; echo b > "$d/prompts/t2.md"; }
+P=$T/p9; mkdraft "$P" -
+bash "$SK/scripts/crew-plan.sh" "$P" check 2>&1 | grep -q "t2: tests task with no depends" && ok "bug9: loose test-first task flagged" || bad "bug9: loose test-first task not flagged"
+P=$T/p9b; mkdraft "$P" t1
+bash "$SK/scripts/crew-plan.sh" "$P" check >/dev/null 2>&1 && ok "bug9: test task depending on its code passes check" || bad "bug9: valid draft rejected: $(bash "$SK/scripts/crew-plan.sh" "$P" check 2>&1 | grep PROBLEM | head -2)"
+
+# ---- bug 10: a path matched twice by the same lane (fix task re-adding its file) is not an overlap
+P=$T/p10; mkdir -p "$P/.devin-crew/lanes" "$T/w10/src"; git -C "$T/w10" init -q; echo x > "$T/w10/src/a.py"
+printf 'W\tsrc/**\nW\tsrc/a.py\n' > "$P/.devin-crew/scopes.txt"; echo "$T/w10" > "$P/.devin-crew/lanes/W.workdir"
+out=$(bash "$SK/scripts/crew-guard.sh" "$P" check 2>&1); case "$out" in *OVERLAP*) bad "bug10: same-lane double match reported as overlap: $out";; *) ok "bug10: same lane twice is not an overlap";; esac
+
 rm -rf "$T"; [ $fail -eq 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
