@@ -57,7 +57,8 @@ case "$cmd" in
     if [ ! -s "$patch" ]; then echo "$lane: no changes"; exit 0; fi
     if git -C "$proj" apply --check "$patch" 2>/tmp/crew-apply.err; then
       git -C "$proj" apply "$patch" || exit 1
-      advance_base $(git -C "$wt" diff HEAD --name-only -- "${globs[@]}")
+      merged=(); while IFS= read -r f; do [ -n "$f" ] && merged+=("$f"); done < <(git -C "$wt" diff HEAD --name-only -- "${globs[@]}")
+      advance_base ${merged[@]+"${merged[@]}"}
       echo "$lane: merged ($(grep -c '^diff --git' "$patch") files), uncommitted"
     else
       # Whole patch does not apply: apply every file that does, list the ones that conflict so they can be reconciled by hand.
