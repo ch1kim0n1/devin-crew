@@ -81,4 +81,13 @@ P=$T/p10; mkdir -p "$P/.devin-crew/lanes" "$T/w10/src"; git -C "$T/w10" init -q;
 printf 'W\tsrc/**\nW\tsrc/a.py\n' > "$P/.devin-crew/scopes.txt"; echo "$T/w10" > "$P/.devin-crew/lanes/W.workdir"
 out=$(bash "$SK/scripts/crew-guard.sh" "$P" check 2>&1); case "$out" in *OVERLAP*) bad "bug10: same-lane double match reported as overlap: $out";; *) ok "bug10: same lane twice is not an overlap";; esac
 
+# ---- bug 11: merging a lane again when its changes are already in the main tree is not a conflict
+P=$T/p11; mkdir -p "$P/x"; git -C "$P" init -q; echo a > "$P/x/f.js"; echo b > "$P/x/g.js"; git -C "$P" add -A; git -C "$P" -c user.name=t -c user.email=t@t commit -qm base
+mkdir -p "$P/.devin-crew/lanes"; printf 'L\tx/**\n' > "$P/.devin-crew/scopes.txt"
+bash "$SK/scripts/crew-worktree.sh" "$P" add L >/dev/null 2>&1
+W=$P/.devin-crew/wt/L; echo a2 > "$W/x/f.js"; bash "$SK/scripts/crew-worktree.sh" "$P" merge L >/dev/null 2>&1   # first merge
+echo b2 > "$W/x/g.js"                                                                                              # a later fix round
+out=$(bash "$SK/scripts/crew-worktree.sh" "$P" merge L 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(cat "$P/x/g.js")" = b2 ] && [ "$(cat "$P/x/f.js")" = a2 ] && ok "bug11: second merge applies new work, skips already-merged files" || bad "bug11: rc=$rc out=$out"
+
 rm -rf "$T"; [ $fail -eq 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

@@ -56,11 +56,14 @@ case "$cmd" in
       ok=0; conflicts=""
       while IFS= read -r f; do
         [ -z "$f" ] && continue
+        # already in the main tree (an earlier merge of this lane applied it): nothing to do, not a conflict
+        if { [ -e "$wt/$f" ] && cmp -s "$wt/$f" "$proj/$f"; } || { [ ! -e "$wt/$f" ] && [ ! -e "$proj/$f" ]; }; then ok=$((ok + 1)); continue; fi
         git -C "$wt" diff HEAD --binary -- "$f" > "$patch.one"
         if git -C "$proj" apply --check "$patch.one" 2>/dev/null; then git -C "$proj" apply "$patch.one"; ok=$((ok + 1))
         else conflicts="$conflicts$f"$'\n'; fi
       done < <(git -C "$wt" diff HEAD --name-only -- "${globs[@]}")
       rm -f "$patch.one"
+      [ -z "$conflicts" ] && { echo "$lane: merged ($ok file(s); some were already in the main tree), uncommitted"; exit 0; }
       echo "$lane: PARTIAL merge: $ok file(s) applied, the rest CONFLICT with changes already in the main tree:"
       printf '%s' "$conflicts" | while IFS= read -r f; do [ -n "$f" ] && echo "  $f   (lane's version: $wt/$f)"; done
       echo "  Reconcile by hand keeping both lanes' work (or resume the lane with the merged file), then rerun crew-guard.sh check."
