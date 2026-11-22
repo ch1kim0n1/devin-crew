@@ -76,4 +76,9 @@ bash "$SK/scripts/crew-plan.sh" "$P" check 2>&1 | grep -q "t2: tests task with n
 P=$T/p9b; mkdraft "$P" t1
 bash "$SK/scripts/crew-plan.sh" "$P" check >/dev/null 2>&1 && ok "bug9: test task depending on its code passes check" || bad "bug9: valid draft rejected: $(bash "$SK/scripts/crew-plan.sh" "$P" check 2>&1 | grep PROBLEM | head -2)"
 
+# ---- bug 10: a path matched twice by the same lane (fix task re-adding its file) is not an overlap
+P=$T/p10; mkdir -p "$P/.devin-crew/lanes" "$T/w10/src"; git -C "$T/w10" init -q; echo x > "$T/w10/src/a.py"
+printf 'W\tsrc/**\nW\tsrc/a.py\n' > "$P/.devin-crew/scopes.txt"; echo "$T/w10" > "$P/.devin-crew/lanes/W.workdir"
+out=$(bash "$SK/scripts/crew-guard.sh" "$P" check 2>&1); case "$out" in *OVERLAP*) bad "bug10: same-lane double match reported as overlap: $out";; *) ok "bug10: same lane twice is not an overlap";; esac
+
 rm -rf "$T"; [ $fail -eq 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

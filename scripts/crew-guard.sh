@@ -102,7 +102,7 @@ case "$cmd" in
         [ -f "$crew/lanes/$lane.readonly" ] && continue   # read-only reviewer sharing a lane worktree
         git -C "$wt" status --porcelain --untracked-files=all | sed -E 's/^.{3}//; s/.* -> //' \
           | grep -vE "$noise" | while read -r path; do
-            o=$(owners_of "$path")
+            o=$(owners_of "$path" | tr " " "\n" | sort -u | xargs)  # a fix task re-adds its own lane's file: same lane twice is not an overlap
             [ -z "$(owners_of "$path" "$lane")" ] && echo "OUTSIDE SCOPE (lane $lane): $path"
             [ "$(echo $o | wc -w | tr -d ' ')" -gt 1 ] && echo "OVERLAP (lane $lane): $path is owned by: $o"
           done > "$crew/check.$lane.tmp"
