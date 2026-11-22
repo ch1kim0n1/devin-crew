@@ -136,6 +136,10 @@ qa_gate() { # all tasks done: have a QA Devin verify the milestone. Returns 0 = 
        echo running > "$cd_dir/qa.state"; bash "$here/crew-audit.sh" "$proj" qa >/dev/null 2>&1; ev "qa launched: $(cat "$crew/qa/lane" 2>/dev/null)"; return 1;;
   esac
 }
+has_wt() { [ -f "$crew/lanes/$1.workdir" ] && [ "$(cat "$crew/lanes/$1.workdir")" != "$proj" ]; }
+siblings_pending() { # another lane is still working or waiting to be collected/merged: its code may be what this lane's acceptance needs
+  local f o; for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; o=$(basename "$f" .state); [ "$o" = "$1" ] && continue
+    case "$(cat "$f")" in launched|reviewing) return 0;; esac; done; return 1; }
 skip_review() { ev "$1 review skipped: $2"; echo "REVIEW-SKIPPED $1 ($2)" >> "$cd_dir/notes"; merge_lane "$1"; }
 
 case "${1:-}" in
@@ -177,12 +181,20 @@ while :; do
       launched)
         exited_since_launch "$l" || continue
         out=$(bash "$here/crew-collect.sh" "$proj" "$l" 2>&1); rc=$?
+        # A worktree lane never sees its siblings' code (a test-first tests lane imports what impl writes): its acceptance can fail for a reason
+        # no fix round can cure. Wait until the siblings are merged, copy their work into its worktree, collect again, and only then fix.
+        if [ "$rc" -eq 1 ] && has_wt "$l"; then
+          if siblings_pending "$l"; then setst "$l" waiting "acceptance failed; waiting for sibling lanes to merge"; continue; fi
+          n=$(bash "$here/crew-worktree.sh" "$proj" sync "$l" 2>/dev/null | tail -1)
+          case "$n" in ''|*[!0-9]*|0) ;; *) ev "$l: synced $n file(s) of merged sibling work into its worktree; collecting again"; out=$(bash "$here/crew-collect.sh" "$proj" "$l" 2>&1); rc=$?;; esac
+        fi
         case "$rc" in
           0) after_clean "$l";;
           1) fix_lane "$l" "acceptance/contract" "$(printf '%s\n' "$out" | grep -v '^VERDICT' | head -30)";;
           3) ;;
           *) setst "$l" brain "$(printf '%s' "$out" | grep '^VERDICT' | head -1)"; printf '%s\n' "$out" | head -30 > "$cd_dir/$l.brain";;
         esac;;
+      waiting) siblings_pending "$l" || setst "$l" launched "siblings merged, collecting again";;
       reviewing)
         r="$l-rev"; alive "$r" && continue
         if [ "$(started_of "$r")" -lt "$(num "$r" launched)" ]; then   # reviewer has not started (or was refused)
@@ -210,7 +222,7 @@ while :; do
   nobrief=""; launched_now=0
   while read -r id lane; do
     [ -z "$id" ] && continue
-    case "$(st_of "$lane")" in brain|launched|reviewing) continue;; esac
+    case "$(st_of "$lane")" in brain|launched|reviewing|waiting) continue;; esac
     [ "$running" -ge "$maxlanes" ] && break
     if [ ! -s "$crew/prompts/$id.md" ]; then nobrief="$nobrief $id"; continue; fi
     if [ -s "$crew/prompts/$id.role" ]; then role=$(head -1 "$crew/prompts/$id.role"); else role=$(bash "$here/crew-roles.sh" pick "$proj" "$id" 2>/dev/null); fi   # the team member that fits the files
@@ -222,7 +234,7 @@ while :; do
     launch "$lane" "$crew/prompts/$id.md" "$role" && { running=$((running + 1)); launched_now=1; rm -f "$cd_dir/qa.state"; }
   done < <(bash "$here/crew-tasks.sh" "$proj" next)
   # 6. finished, or stuck?
-  active=0; for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; case "$(cat "$f")" in launched|reviewing) active=1;; esac; done
+  active=0; for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; case "$(cat "$f")" in launched|reviewing|waiting) active=1;; esac; done
   for f in "$crew"/lanes/*.status; do [ -e "$f" ] || continue; alive "$(basename "$f" .status)" && active=1; done
   if [ "$active" -eq 0 ] && [ "$launched_now" -eq 0 ]; then
     left=$(awk -F'|' 'function t(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x} NF>=7 {id=t($2); if(id=="id"||id==""||id ~ /^-/||id ~ /^:/) next; s=(t($NF)=="")?NF-1:NF; if (t($s)!="done") printf "%s ", id}' "$crew/TASKS.md" 2>/dev/null)

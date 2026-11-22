@@ -31,11 +31,11 @@ bash "$S/crew-plan.sh" "$p" check; rc=$?
 ok "draft plan validates (briefs, scopes, roles, <=5 lanes)" '[ "$rc" = 0 ]'
 [ "$rc" = 0 ] || { echo "stopping: the draft is not usable (see $crew/draft)"; exit 1; }
 bash "$S/crew-plan.sh" "$p" apply --budget 300 || exit 1
-bash "$S/crew-init.sh" "$p" "python3 -m unittest" --trust || exit 1
+bash "$S/crew-init.sh" "$p" "python3 -m unittest discover -s tests" --trust || exit 1
 CREW_AUTOPILOT_MAX_SECS=${CREW_AUTOPILOT_MAX_SECS:-3000} bash "$S/crew-autopilot.sh" "$p" run
 ok "autopilot reached DONE" '[ -f $crew/autopilot/DONE ]'
 ok "QA verdict is PASS or PASS WITH NOTES" 'bash $S/crew-audit.sh $p verdict >/dev/null 2>&1'
-ok "the project tests pass in the main tree" '(cd $p && python3 -m unittest >/dev/null 2>&1)'
+ok "the project tests pass in the main tree" '(cd $p && python3 -m unittest discover -s tests >/dev/null 2>&1)'
 ok "slugify exists and works" '(cd $p && python3 -c "from textutil import slugify; assert slugify(\"Hello, World!\") == \"hello-world\"")'
 ok "report written" '[ -s $crew/REPORT.md ]'
 ok "README documents it" 'grep -qi slugify $p/README.md'

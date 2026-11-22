@@ -3,6 +3,8 @@
 #   bash crew-worktree.sh <project> add <lane>      create .devin-crew/wt/<lane> from HEAD, point the lane at it
 #   bash crew-worktree.sh <project> merge <lane>    apply the lane's in-scope changes to the main tree as uncommitted edits; files that
 #                                                   conflict with earlier merges are listed, the rest still apply (exit 1)
+#   bash crew-worktree.sh <project> sync <lane>     copy the main tree's merged work (other lanes' files) into the lane's worktree as a base, so
+#                                                   its acceptance sees its siblings' code; the lane's own changes are untouched; prints a count
 #   bash crew-worktree.sh <project> remove <lane>   delete the worktree (after merge)
 # <project> must be a git repo root. Run `add` for every lane before launching any.
 # ponytail: node_modules/.venv/venv at repo root are symlinked into each worktree so tests can run.
@@ -64,6 +66,32 @@ case "$cmd" in
       echo "  Reconcile by hand keeping both lanes' work (or resume the lane with the merged file), then rerun crew-guard.sh check."
       exit 1
     fi
+    ;;
+  sync)
+    # Bring the main tree's merged (uncommitted) work into a lane's worktree so its acceptance can see its siblings' code (test-first lanes).
+    # The files are committed there as a throwaway base (paths only, detached), so the lane's own diff and its merge stay lane-only.
+    # Files the lane changed itself are left alone. Prints the number of files synced.
+    [ -d "$wt" ] || { echo "no worktree for $lane" >&2; exit 1; }
+    excl=(); for l in $links; do excl+=(":!$l"); done
+    excl+=(":(exclude,glob)**/__pycache__/**" ":(exclude,glob)**/*.pyc" ":(exclude,glob)**/.DS_Store")
+    git -C "$wt" add -N -- . "${excl[@]}" 2>/dev/null
+    mine=$(git -C "$wt" diff HEAD --name-only -- . "${excl[@]}")
+    picked=()
+    while IFS= read -r -d '' f; do
+      case "$f" in .devin-crew/*|__pycache__/*|*/__pycache__/*|*.pyc|*.DS_Store|node_modules/*|.venv/*|venv/*) continue;; esac
+      printf '%s\n' "$mine" | grep -qxF -- "$f" && continue
+      if [ -e "$proj/$f" ]; then
+        cmp -s "$proj/$f" "$wt/$f" 2>/dev/null && continue
+        mkdir -p "$wt/$(dirname "$f")"; cp -p "$proj/$f" "$wt/$f"
+      else
+        [ -e "$wt/$f" ] || continue; rm -f "$wt/$f"
+      fi
+      picked+=("$f")
+    done < <(git -C "$proj" diff HEAD --name-only -z; git -C "$proj" ls-files -o --exclude-standard -z)
+    if [ ${#picked[@]} -gt 0 ]; then
+      git -C "$wt" add -A -- "${picked[@]}" && git -C "$wt" -c user.name=crew -c user.email=crew@local commit -q --no-verify -m "crew base (sync)" -- "${picked[@]}" || { echo "sync commit failed in $wt" >&2; exit 1; }
+    fi
+    echo "${#picked[@]}"
     ;;
   remove)
     git -C "$proj" worktree remove --force "$wt" && rm -f "$crew/lanes/$lane.workdir" && echo "removed $wt"

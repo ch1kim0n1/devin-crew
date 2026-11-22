@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.1 (2026-11-21)
+
+Hotfix found by a real-Devin end-to-end run.
+- Fix: a worktree lane whose acceptance needs a sibling's code (the test-first `tests` lane next to `impl`, which the architect plans by default) failed verify forever and burned both fix rounds, then stopped the autopilot with `ATTENTION: BRAIN tests: fix rounds exhausted`. The conductor now parks such a lane (`waiting`) while its siblings are still running or unmerged, copies their merged work into its worktree (`crew-worktree.sh sync <lane>`, a throwaway base commit, the lane's own diff and merge stay lane-only), collects again, and only then spends a fix round.
+- Fix: `tests/e2e-real.sh` used `python3 -m unittest`, which finds no tests in `tests/` (exit 5), so its baseline and "project tests pass" checks could never pass; it now uses `unittest discover -s tests`.
+- Tests: smoke suite 209 checks (two new: sibling sync with the reviewer off and on). Real e2e: 9/9 (23 min).
+
 ## 1.4.0 (2026-11-18)
 
 Vague goal in, verified pull request out; a whole team of Devins; the brain only conducts (`reference/autopilot.md`).

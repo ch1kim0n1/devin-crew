@@ -422,6 +422,19 @@ bash "$S/crew-worktree.sh" "$cp9" add a >/dev/null 2>&1
 o=$(STUB_BOARD="$cp9/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOREVIEW=0 CREW_MERGE=0 bash "$S/crew-conduct.sh" "$cp9" 2>&1)
 ok "conductor: a later lane gets a worktree cut from the merged tree" '[ -f $cp9/.devin-crew/lanes/b.workdir ] && grep -q "b: worktree created" $cp9/.devin-crew/events.log'
 
+mkwt() { # mkwt <name> -> worktree crew: lane impl makes lib.txt, lane tests needs lib.txt (test-first pairing, as the architect plans it)
+  local d="$work/$1"; mkdir -p "$d/.devin-crew/prompts"; ( cd "$d" && git init -q && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m base ) >/dev/null 2>&1
+  printf 'version: 1\n' > "$d/.devin-crew/CONTRACTS.md"; : > "$d/.devin-crew/BOARD.md"; printf 'impl\tlib.txt\ntests\tt.txt\n' > "$d/.devin-crew/scopes.txt"
+  printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n| t1 | impl | lib.txt | - | test -f lib.txt | open |\n| t2 | tests | t.txt | - | test -f lib.txt && test -f t.txt | open |\n' > "$d/.devin-crew/TASKS.md"
+  printf 'task one\n' > "$d/.devin-crew/prompts/t1.md"; printf 'task two\n' > "$d/.devin-crew/prompts/t2.md"
+  bash "$S/crew-worktree.sh" "$d" add impl >/dev/null 2>&1; bash "$S/crew-worktree.sh" "$d" add tests >/dev/null 2>&1; echo "$d"; }
+WDONES=$'DONE impl: files changed: lib.txt | verified: test -f lib.txt -> ok | contracts: v1 | open issues for other lanes: none\nDONE tests: files changed: t.txt | verified: test -f t.txt -> ok | contracts: v1 | open issues for other lanes: none'
+for rv in 0 1; do   # 0: impl is already merged when tests is collected; 1: impl is still in review (tests must wait, not burn fix rounds)
+  cpw=$(mkwt cond-sync$rv)
+  o=$(STUB_BOARD="$cpw/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$WDONES" STUB_WRITE="$cpw/.devin-crew/wt/impl/lib.txt::ok@@@$cpw/.devin-crew/wt/tests/t.txt::ok" CREW_AUTOREVIEW=$rv bash "$S/crew-conduct.sh" "$cpw" 2>&1)
+  ok "conductor: a lane that needs a sibling's merged work is synced, not sent into fix rounds (review=$rv)" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY" && [ "$(cat $cpw/.devin-crew/conduct/tests.fix)" = 0 ] && [ -f $cpw/lib.txt ] && [ -f $cpw/t.txt ]'
+done
+
 cpq=$(mkcrew cond-qa); touch "$cpq/flag.txt"
 o=$(STUB_BOARD="$cpq/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" STUB_WRITE="$cpq/.devin-crew/qa/1.md::PASS WITH NOTES : all acceptance green" CREW_AUTOQA=1 CREW_AUTOREVIEW=0 bash "$S/crew-conduct.sh" "$cpq" 2>&1)
 ok "qa lane: a QA Devin runs after the last task and its verdict rides the MILESTONE-READY digest" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY" && printf "%s" "$o" | grep -q "^PASS WITH NOTES" && [ "$(cat $cpq/.devin-crew/lanes/qa-1.status)" = done ]'

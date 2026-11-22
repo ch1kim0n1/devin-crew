@@ -13,3 +13,10 @@ Setup: `crew-doctor.sh --trust`, PLAN.md, 5 contract-first briefs, budget 20 lan
 - Budget: 16 of 20 lane-minutes (80% warning fired). Total lane run time about 17 minutes.
 
 Not exercised in a real run: an empty-reply stall after the per-turn cap change, Linux, a project larger than a few thousand lines, shared-tree mode with 5 lanes.
+
+## 2026-11-21, real e2e (`CREW_E2E=1 bash tests/e2e-real.sh`), toy `textutil.py` + slugify, worktree mode
+- Run 1 (before the fix): 4 ok, 5 FAIL. The `tests` lane (test-first, parallel to `impl`) failed acceptance with `ImportError: cannot import name 'slugify'` because its worktree never saw `impl`'s code; two fix rounds were spent, the autopilot stopped with ATTENTION. Overlaying the merged `textutil.py` made the same acceptance pass (11 passed), which confirmed the cause.
+- Fix: conductor `waiting` state + `crew-worktree.sh sync` (1.4.1).
+- Run 2 (after the fix): 9/9 ok in 23 min. The log shows `tests -> waiting`, `synced 1 file(s) of merged sibling work`, then only reviewer-quality fix rounds; 2 milestones, 3 QA Devins, 2 security specialists, report written, no push or PR.
+- Noted, not fixed: a read-only reviewer of `impl` can flag "no tests exist" because it only sees the `impl` worktree (cost: one extra fix round).
+
