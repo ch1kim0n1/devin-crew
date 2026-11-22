@@ -5,7 +5,10 @@
 Hotfix found by a real-Devin end-to-end run.
 - Fix: a worktree lane whose acceptance needs a sibling's code (the test-first `tests` lane next to `impl`, which the architect plans by default) failed verify forever and burned both fix rounds, then stopped the autopilot with `ATTENTION: BRAIN tests: fix rounds exhausted`. The conductor now parks such a lane (`waiting`) while its siblings are still running or unmerged, copies their merged work into its worktree (`crew-worktree.sh sync <lane>`, a throwaway base commit, the lane's own diff and merge stay lane-only), collects again, and only then spends a fix round.
 - Fix: `tests/e2e-real.sh` used `python3 -m unittest`, which finds no tests in `tests/` (exit 5), so its baseline and "project tests pass" checks could never pass; it now uses `unittest discover -s tests`.
-- Tests: smoke suite 209 checks (two new: sibling sync with the reviewer off and on). Real e2e: 9/9 (23 min).
+- Fix: a lane that owns several tasks no longer marks all of them running/review/done when it runs one (only the task named by the brief, or the lane's single task, moves); a fix brief only revives tasks that already ran.
+- Fix: the error classifier no longer reads the agent's own prose ("billing-blocked" in a report was a false RATE_OR_QUOTA); only lines that open like an error count.
+- New: `crew-lane-reset.sh <project> <lane>...` recovers a failed or stuck lane in one step (reopens its tasks, clears NEEDS-USER and the sticky lane model, moves the session aside); `crew-conduct.sh --reset` now says it only resets conductor state.
+- Tests: smoke suite 210 checks (three new: sibling sync with the reviewer off and on, and the crew-fixes regression suite). Real e2e: 9/9 (23 min).
 
 ## 1.4.0 (2026-11-18)
 

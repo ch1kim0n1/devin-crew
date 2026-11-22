@@ -37,7 +37,21 @@ lane_sid() { # lane -> session id (saved, else newest session in the lane's work
   echo "$sid"
 }
 
-classify_error() { # text file(s) -> CLASS + evidence
+classify_error() { # lane log [+ process-log error lines] -> CLASS + evidence. The lane log is Devin's output INCLUDING the
+  # agent's own prose, so only lines that OPEN like an error count (a report that says "billing-blocked" mid-sentence is not a billing error).
+  local first=1 f tf rc files=() tmps=()
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    if [ "$first" = 1 ]; then
+      tf=$(mktemp); tmps+=("$tf")
+      grep -Ei '^[[:space:]"{]*(error|fatal|panic|thread .*panicked|not authenticated|you.ve reached|you have reached|reached request|run auth login|untrusted workspace|prompt is too long|context (length|window))|cognition\.ai/|^--- crew watchdog' "$f" > "$tf" 2>/dev/null
+      files+=("$tf"); first=0
+    else files+=("$f"); fi
+  done
+  classify_error_raw "${files[@]}"; rc=$?
+  rm -f "${tmps[@]}"; return $rc
+}
+classify_error_raw() { # text file(s) -> CLASS + evidence
   local pat cls f
   for pat in \
     'AUTH|unauthori[sz]ed|(^|[^0-9])401([^0-9]|$)|not logged in|not authenticated|auth login|token (expired|invalid)|invalid.*credential' \

@@ -110,7 +110,16 @@ if [ "$dry" -eq 1 ]; then
 fi
 echo $$ > "$crew/lanes/$lane.pid"; date +%s > "$crew/lanes/$lane.started"
 echo running > "$crew/lanes/$lane.status"
-[ "$task" != "-" ] && bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" "open|failed|review" running
+# Only the task this brief belongs to changes state (a lane can own several tasks; the others have not run). A brief that is
+# not a task id (a fix or review brief) only revives tasks that already ran: failed or in review, never open ones.
+# The task is named by the brief (prompts/<task-id>.md); a brief with another name still counts when the lane owns exactly one task.
+tid=""; if [ "$task" != "-" ]; then
+  tid=$(awk -F'|' -v b="$(basename "$task" .md)" -v l="$lane" 'function t(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x}
+    NF>=7 && t($2)!="id" && t($2)!~/^-/ { if (t($2)==b) hit=t($2); if (t($3)==l) { n++; own=t($2) } }
+    END { if (hit!="") print hit; else if (n==1) print own }' "$crew/TASKS.md" 2>/dev/null)
+fi
+if [ -n "$tid" ]; then bash "$skill_dir/scripts/crew-tasks.sh" "$proj" set "$tid" running
+elif [ "$task" != "-" ]; then bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" "failed|review" running; fi
 cd "$workdir" || exit 2
 max=${CREW_MAX_SECS:-2700}; retries=${CREW_STALL_RETRIES:-2}; t0=$(date +%s); start=$t0
 : > "$log"
@@ -189,7 +198,8 @@ if [ "$st" != "done" ]; then
 fi
 echo "$st" > "$crew/lanes/$lane.status"
 if [ "$task" != "-" ]; then   # a lane that exited ok awaits verification; a failed one is failed
-  if [ "$st" = "done" ]; then bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" running review; else bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" running failed; fi
+  if [ "$st" = "done" ]; then to=review; else to=failed; fi
+  if [ -n "$tid" ]; then bash "$skill_dir/scripts/crew-tasks.sh" "$proj" set "$tid" "$to"; else bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" running "$to"; fi
 fi
 rm -f "$crew/lanes/$lane.pid"
 ev "exit status=$st session=${sid:-unknown} elapsed=$(( $(date +%s) - t0 )) nudges=$attempt"

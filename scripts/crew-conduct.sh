@@ -150,7 +150,7 @@ case "${1:-}" in
       [ $(( $(date +%s) - t1 )) -ge "$maxsecs" ] && { echo "CONDUCT TIMEOUT (reporter)"; exit 0; }; sleep "$poll"; done
     if [ -s "$crew/REPORT.md" ]; then echo "CONDUCT REPORT-READY"; head -50 "$crew/REPORT.md"; else echo "CONDUCT BRAIN report: the reporter wrote no REPORT.md (see $crew/logs/report-launch.out)"; fi
     exit 0;;
-  --reset) l=${2:?lane}; setst "$l" "${3:-launched}"; rm -f "${cd_dir:?}/${l:?}.brain" "${cd_dir:?}/${l:?}.reported"; [ "${3:-launched}" = launched ] && echo 0 > "$cd_dir/$l.launched"; echo "reset $l"; exit 0;;
+  --reset) l=${2:?lane}; setst "$l" "${3:-launched}"; rm -f "${cd_dir:?}/${l:?}.brain" "${cd_dir:?}/${l:?}.reported"; [ "${3:-launched}" = launched ] && echo 0 > "$cd_dir/$l.launched"; echo "reset $l (conductor state only: a failed lane stays failed and tasks keep their status; to recover and relaunch it use crew-lane-reset.sh)"; exit 0;;
 esac
 
 ev "start (autofix=$autofix autoreview=$autorev merge=$domerge lanes<=$maxlanes)"

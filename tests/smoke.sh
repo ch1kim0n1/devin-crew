@@ -341,6 +341,7 @@ ok "next: s2 unblocked after s1 done" '[ "$(bash $S/crew-tasks.sh $proj next)" =
 CREW_RETRY_OK=1 STUB_EXIT=3 bash "$S/devin-lane.sh" "$proj" bad2 - "$work/task.md" >/dev/null 2>&1
 ok "lane exit nonzero -> task failed" 'grep -q "| s2 .*| failed |" $crew/TASKS.md'
 ok "set leaves other rows alone" 'grep -q "| s3 .*| open |" $crew/TASKS.md && grep -q "| s1 .*| done |" $crew/TASKS.md'
+ok "regression: lane-wide task status, error classifier on prose, lane reset, sticky model (tests/test_crew_fixes.sh)" 'bash $here/test_crew_fixes.sh $here/.. 2>&1 | grep -q "^ALL PASS"'
 
 echo "--- verify"
 cat > "$crew/TASKS.md" <<'T'
