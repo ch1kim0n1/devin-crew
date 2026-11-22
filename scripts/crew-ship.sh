@@ -29,7 +29,7 @@ case "$cur" in crew/*) branch=$cur;; esac
 title=$(grep -iE '^#* *(objective|goal):' "$crew/PLAN.md" 2>/dev/null | head -1 | sed -E 's/^#* *[A-Za-z]+: *//' | cut -c1-70); title=${title:-crew: ${slug:-work}}
 files=$(git -C "$proj" status --porcelain --untracked-files=all | sed -E 's/^.{3}//; s/.* -> //' | grep -v '^\.devin-crew/' | grep -vE '(^|/)(node_modules|__pycache__|\.venv|target|dist|build)/' )
 pre="$crew/prework.files"   # files that were already dirty before the crew started belong to the user: ship them only if a lane scope covers them
-in_scope() { local f=$1 g; while IFS=$'\t' read -r _ g; do
+in_scope() { local f=$1 g; while IFS=$'\t' read -r _ g || [ -n "$g" ]; do
   # shellcheck disable=SC2254
   case "$f" in $g) return 0;; esac; done < "$crew/scopes.txt"; return 1; }
 if [ -s "$pre" ] && [ -f "$crew/scopes.txt" ]; then

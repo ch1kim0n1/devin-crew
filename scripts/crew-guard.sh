@@ -28,7 +28,7 @@ list_files() {
 noise='(^|/)(node_modules|\.venv|venv|__pycache__)(/|$)|\.pyc$|(^|/)\.DS_Store$'
 owners_of() { # path -> lane names whose scope matches (optionally only lane $2)
   local p=$1 only=${2:-} lane glob out=""
-  while IFS=$'\t' read -r lane glob; do
+  while IFS=$'\t' read -r lane glob || [ -n "$lane" ]; do
     [ -n "$only" ] && [ "$lane" != "$only" ] && continue
     # shellcheck disable=SC2254
     case "$p" in $glob) out="$out $lane" ;; esac
@@ -40,7 +40,7 @@ case "$cmd" in
   scopes)   # two lanes owning the same or nested paths is a planning mistake: it surfaces as a merge conflict later
     [ -f "$crew/scopes.txt" ] || { echo "no scopes.txt" >&2; exit 2; }
     n=0; entries=()
-    while IFS=$'\t' read -r lane glob; do [ -n "$lane" ] && entries+=("$lane	$glob"); done < "$crew/scopes.txt"
+    while IFS=$'\t' read -r lane glob || [ -n "$lane" ]; do [ -n "$lane" ] && entries+=("$lane	$glob"); done < "$crew/scopes.txt"
     i=0; for a in ${entries[@]+"${entries[@]}"}; do
       la=${a%%	*}; ga=${a#*	}; j=0
       for b in ${entries[@]+"${entries[@]}"}; do

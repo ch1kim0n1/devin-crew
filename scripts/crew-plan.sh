@@ -87,7 +87,7 @@ BRIEF
     while [ $# -gt 0 ]; do case "$1" in --ship) ship=1; shift;; --budget) budget=$2; shift 2;; *) shift;; esac; done
     c=$(bash "$0" "$proj" check) || { printf '%s\n' "$c"; echo "PLAN STOP: fix the problems above (re-draft with --answers, or edit the draft files), then rerun"; exit 1; }
     mkdir -p "$crew/prompts" "$crew/milestones"
-    cp "$dr/PLAN.md" "$crew/PLAN.md"; cp "$dr/SPEC.md" "$crew/SPEC.md"; cp "$dr/CONTRACTS.md" "$crew/CONTRACTS.md"; cp "$dr/ROSTER.md" "$crew/ROSTER.md"; cp "$dr/scopes.txt" "$crew/scopes.txt"
+    cp "$dr/PLAN.md" "$crew/PLAN.md"; cp "$dr/SPEC.md" "$crew/SPEC.md"; cp "$dr/CONTRACTS.md" "$crew/CONTRACTS.md"; cp "$dr/ROSTER.md" "$crew/ROSTER.md"; cp "$dr/scopes.txt" "$crew/scopes.txt"; [ -n "$(tail -c1 "$crew/scopes.txt")" ] && echo >> "$crew/scopes.txt"  # a missing final newline hides the last scope from `read` loops
     cp "$dr/baseline.cmd" "$crew/baseline.cmd.draft"; cp "$dr"/prompts/* "$crew/prompts/" 2>/dev/null; cp "$dr"/milestones/m*.tasks "$crew/milestones/"
     printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n' > "$crew/TASKS.md"
     [ -f "$crew/BOARD.md" ] || : > "$crew/BOARD.md"

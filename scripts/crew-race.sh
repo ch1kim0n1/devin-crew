@@ -16,6 +16,7 @@ IFS='|' read -r _ _ lane scope dep acc _ <<< "$row"; lane=$(echo $lane); alt="$l
 [ -e "$crew/race/$id" ] && { echo "already racing: $(cat "$crew/race/$id")"; exit 0; }
 mkdir -p "$crew/race"
 printf '| %s-alt | %s | %s | %s | %s | open |\n' "$id" "$alt" "$(echo $scope)" "$(echo $dep)" "$(echo $acc)" >> "$crew/TASKS.md"
+[ -n "$(tail -c1 "$crew/scopes.txt")" ] && echo >> "$crew/scopes.txt"
 awk -F'\t' -v l="$lane" -v a="$alt" '$1==l{print a "\t" $2}' "$crew/scopes.txt" >> "$crew/scopes.txt"
 { cat "$crew/prompts/$id.md"; printf '\nNote: another Devin solves this same task independently in its own worktree; only the better result is merged. Stay inside your own directory and do not wait for it.\n'; } > "$crew/prompts/$id-alt.md"
 [ -s "$crew/prompts/$id.role" ] && cp "$crew/prompts/$id.role" "$crew/prompts/$id-alt.role"

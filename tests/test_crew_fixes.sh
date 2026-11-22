@@ -61,4 +61,8 @@ else
 fi
 bash "$SK/scripts/crew-conduct.sh" "$P" --reset L 2>&1 | grep -q "crew-lane-reset" && ok "bug3: --reset output points to crew-lane-reset.sh" || bad "bug3: --reset does not say it only resets conductor state"
 
+# ---- bug 8: scopes.txt without a final newline must not hide its last line
+P=$T/p8; mkdir -p "$P/.devin-crew"; printf 'A\ta/**\nB\ta/**' > "$P/.devin-crew/scopes.txt"
+bash "$SK/scripts/crew-guard.sh" "$P" scopes 2>&1 | grep -q "SCOPE OVERLAP: A" && ok "bug8: last scope line read without a final newline" || bad "bug8: last scope line ignored"
+
 rm -rf "$T"; [ $fail -eq 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

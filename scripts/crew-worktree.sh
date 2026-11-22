@@ -43,7 +43,7 @@ case "$cmd" in
     git -C "$wt" add -N -- . "${excl[@]}" 2>/dev/null
     patch="$crew/lanes/$lane.patch"
     # Only the lane's own scope globs (scopes.txt) are merged; anything else it touched is reported and left behind.
-    globs=(); while IFS=$'\t' read -r l g; do [ "$l" = "$lane" ] && globs+=("$g"); done < "$crew/scopes.txt"
+    globs=(); while IFS=$'\t' read -r l g || [ -n "$l" ]; do [ "$l" = "$lane" ] && globs+=("$g"); done < "$crew/scopes.txt"
     [ ${#globs[@]} -gt 0 ] || { echo "$lane has no scope in scopes.txt; refusing to merge" >&2; exit 1; }
     skipped=$(comm -23 <(git -C "$wt" diff HEAD --name-only -- . "${excl[@]}" | sort) <(git -C "$wt" diff HEAD --name-only -- "${globs[@]}" | sort))
     [ -n "$skipped" ] && { echo "$lane: NOT merged (outside its scope):"; echo "$skipped" | sed 's/^/  /'; }
