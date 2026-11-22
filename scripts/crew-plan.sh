@@ -37,7 +37,7 @@ Update the draft accordingly (QUESTIONS.md becomes NONE unless something new is 
 10. prompts/<task-id>.md: one self-contained brief per task (goal, owned files, contracts to honor, the exact verify command, definition of done, what sibling lanes do at the same time). Optionally prompts/<task-id>.role holding one role name; if absent the role is picked from the task's files.
 Roles you can assign (templates/roles/):
 $roles
-Rules: pair risky or contract-heavy work with a \`tests\` lane that writes tests from CONTRACTS.md in parallel (test-first); never more lanes than independent file clusters; every task is small enough for one Devin turn of 5-45 minutes; the last milestone includes docs for what was built. You never edit project files.
+Rules: pair risky or contract-heavy work with a \`tests\` lane that writes tests from CONTRACTS.md in parallel (test-first); a \`tests\` task's depends lists the task(s) whose code its acceptance command runs (otherwise it is checked red before that code merges); never more lanes than independent file clusters; every task is small enough for one Devin turn of 5-45 minutes; the last milestone includes docs for what was built. You never edit project files.
 BRIEF
     [ "$print" = 1 ] && { echo "brief: $brief"; cat "$brief"; exit 0; }
     # Devin refuses untrusted workspaces and this skill never bypasses that: find out now, once, before the architect is launched
@@ -72,6 +72,16 @@ BRIEF
         IFS='|' read -r _ id _ _ dep _ <<< "$row"; id=$(echo $id); case "$id" in id|-*|"") continue;; esac
         for d in $(echo "$dep" | tr ',' ' '); do [ "$d" = - ] && continue; case "$ids" in *" $d "*) ;; *) prob "$id depends on unknown task $d";; esac; done
       done < "$mf"; done
+    # test-first: a tests-role task checked before the code it tests merges always fails, so it must depend on that task
+    istest() { [ "$1" = tests ] || grep -q "^- $1 (tests)" "$dr/ROSTER.md" 2>/dev/null || [ "$(head -1 "$dr/prompts/$2.role" 2>/dev/null)" = tests ]; }
+    for mf in "$dr"/milestones/m*.tasks; do [ -e "$mf" ] || continue
+      other=0; loose=""
+      while IFS= read -r row; do case "$row" in '|'*) ;; *) continue;; esac
+        IFS='|' read -r _ id lane _ dep _ <<< "$row"; id=$(echo $id); lane=$(echo $lane); dep=$(echo $dep); case "$id" in id|-*|"") continue;; esac
+        if istest "$lane" "$id"; then [ "$dep" = - ] && loose="$loose $id"; else other=1; fi
+      done < "$mf"
+      [ "$other" = 1 ] && for id in $loose; do prob "$id: tests task with no depends; list the task(s) whose code its acceptance runs"; done
+    done
     nlu=$(printf '%s' "$lanes" | sort -u | grep -c . || true)
     [ "${nlu:-0}" -le 5 ] || prob "$nlu lanes (cap 5)"
     dup=$(awk -F'\t' 'NF>=2{k=$2; if (k in o && o[k]!=$1) print k; o[k]=$1}' "$dr/scopes.txt" 2>/dev/null | head -3)
