@@ -8,6 +8,9 @@ proj="$work/proj"; mkdir -p "$proj/.devin-crew" "$work/out"
 export STUB_OUT="$work/out" STUB_BOARD="$proj/.devin-crew/BOARD.md" PATH="$here/stub:$PATH"
 crew="$proj/.devin-crew"
 export CREW_NOTIFY=off CREW_LEDGER="$work/ledger.tsv" DEVIN_SESSIONS_DB="$work/sessions.db"   # never touch the real ledger or Devin's store
+expected_model=${CREW_MODEL:-$(head -1 "$here/../MODEL" 2>/dev/null)}
+expected_model=${expected_model:-swe-2-flash-high}
+export STUB_AVAILABLE_MODEL="$expected_model"
 sqlite3 "$DEVIN_SESSIONS_DB" "create table sessions(id text, metadata text); create table message_nodes(session_id text, node_id int, chat_message text, metadata text); create table tool_call_state(session_id text);
 insert into sessions values('stub-session-1','{\"total_acu_cost\":0.5}');
 insert into message_nodes values('stub-session-1',1,'{\"role\":\"assistant\",\"content\":\"aaaaaaaaaaaaaaaaaaaa\"}','{\"num_tokens_preceding\":1000}');
@@ -34,7 +37,7 @@ printf 'build the thing\n' > "$work/task.md"
 printf 'x\tsrc/*\n' > /dev/null
 out=$(bash "$S/devin-lane.sh" "$proj" api some-other-model "$work/task.md" 2>&1)
 ok "lane finishes done" '[ "$(cat $crew/lanes/api.status)" = "done" ]'
-ok "model coerced" 'grep -q "model=swe-2-flash-high" $STUB_OUT/args.log'
+ok "model coerced to the configured default" 'grep -qF "model=$expected_model " "$STUB_OUT/args.log"'
 CREW_MODEL=my-other-model bash "$S/devin-lane.sh" "$proj" mdl - "$work/task.md" >/dev/null 2>&1
 ok "CREW_MODEL changes the lane model" 'grep -q "model=my-other-model" $STUB_OUT/args.log && [ "$(cat $crew/lanes/mdl.model)" = "my-other-model" ]'
 ok "bypass mode default" 'grep -q "perm=dangerous" $STUB_OUT/args.log'
@@ -173,11 +176,11 @@ fi
 
 echo "--- doctor"
 d=$(bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
-ok "doctor ready on a healthy setup" '[ "$rc" = 0 ] && printf "%s" "$d" | grep -q "doctor: ready" && printf "%s" "$d" | grep -q "model available: swe-2-flash-high"'
+ok "doctor ready on a healthy setup" '[ "$rc" = 0 ] && printf "%s" "$d" | grep -q "doctor: ready" && printf "%s" "$d" | grep -qF "model available: $expected_model"'
 d=$(STUB_AUTH=out bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
 ok "doctor fails when logged out, with fix" '[ "$rc" = 1 ] && printf "%s" "$d" | grep -q "FAIL devin not logged in.*devin auth login"'
 d=$(STUB_NO_MODEL=1 bash "$S/crew-doctor.sh" "$proj" 2>&1); rc=$?
-ok "doctor fails when model missing" '[ "$rc" = 1 ] && printf "%s" "$d" | grep -q "FAIL model swe-2-flash-high"'
+ok "doctor fails when model missing" '[ "$rc" = 1 ] && printf "%s" "$d" | grep -qF "FAIL model $expected_model"'
 d=$(bash "$S/crew-doctor.sh" "$work/nope" 2>&1); rc=$?
 ok "doctor fails on missing folder" '[ "$rc" = 1 ]'
 ok "doctor flags non-git project" 'bash "$S/crew-doctor.sh" "$proj" 2>&1 | grep -q "WARN not a git repo"'
@@ -457,6 +460,32 @@ printf 'a\tsrc/a*\nb\tsrc/b*\n' > "$ip/.devin-crew/scopes.txt"
 o=$(bash "$S/crew-init.sh" "$ip" "true" 2>&1); rc=$?
 ok "init: lock, baseline and a worktree per lane in one call" '[ "$rc" = 0 ] && printf "%s" "$o" | grep -q "^INIT OK: lanes: a b" && [ -d $ip/.devin-crew/wt/a ] && [ -d $ip/.devin-crew/wt/b ] && [ -f $ip/.devin-crew/LOCK ]'
 ok "init: output stays short" '[ "$(printf "%s\n" "$o" | wc -l | tr -d " ")" -le 8 ]'
+blocked="$work/init-blocked"; mkdir -p "$blocked/.devin-crew/prompts"
+git -C "$blocked" init -q
+printf 'a\tsrc/**\n' > "$blocked/.devin-crew/scopes.txt"
+o=$(bash "$S/crew-init.sh" "$blocked" false 2>&1); rc=$?
+ok "init: a failed baseline stops setup and releases the lock" '[ "$rc" = 1 ] && grep -q "INIT STOP: baseline failed" <<< "$o" && [ ! -e "$blocked/.devin-crew/LOCK" ]'
+o=$(bash "$S/crew-init.sh" "$blocked" true 2>&1); rc=$?
+ok "init: a missing worktree stops setup and releases the lock" '[ "$rc" = 1 ] && grep -q "INIT STOP: could not prepare worktree for a" <<< "$o" && [ ! -e "$blocked/.devin-crew/LOCK" ]'
+printf '| t1 | a | src/** | - | true | open |\n' > "$blocked/.devin-crew/TASKS.md"
+echo brief > "$blocked/.devin-crew/prompts/t1.md"
+o=$(bash "$S/devin-lane.sh" --print "$blocked" a - "$blocked/.devin-crew/prompts/t1.md" 2>&1); rc=$?
+ok "lane: requires a worktree when worktree setup was selected" '[ "$rc" = 2 ] && grep -q "requires a Git worktree" <<< "$o"'
+o=$(bash "$S/crew-conduct.sh" "$blocked" 2>&1)
+ok "conductor: worktree setup failure blocks the task before launch" 'grep -q "^CONDUCT WORKTREE a:" <<< "$o" && [ ! -e "$blocked/.devin-crew/lanes/a.status" ]'
+mkdir -p "$blocked/.devin-crew/milestones"
+mv "$blocked/.devin-crew/TASKS.md" "$blocked/.devin-crew/milestones/m1.tasks"
+printf '%s\n' "$$" > "$blocked/.devin-crew/router.pid"
+o=$(bash "$S/crew-autopilot.sh" "$blocked" run 2>&1)
+ok "autopilot: pauses when a milestone has no usable worktree" 'grep -q "^ATTENTION: WORKTREE a:" <<< "$o" && [ ! -e "$blocked/.devin-crew/lanes/a.status" ]'
+git -C "$blocked" -c user.email=t@t -c user.name=t commit -qm initial --allow-empty
+o=$(bash "$S/crew-init.sh" "$blocked" true 2>&1); rc=$?
+ok "init: setup can be retried after repairing the repo" '[ "$rc" = 0 ] && [ -f "$blocked/.devin-crew/lanes/a.workdir" ]'
+snapshot_proj="$work/init-snapshot"; mkdir -p "$snapshot_proj/.devin-crew" "$work/tar-failure"
+printf 'a\tsrc/**\n' > "$snapshot_proj/.devin-crew/scopes.txt"
+printf '#!/bin/sh\nexit 7\n' > "$work/tar-failure/tar"; chmod +x "$work/tar-failure/tar"
+o=$(PATH="$work/tar-failure:$PATH" bash "$S/crew-init.sh" "$snapshot_proj" true 2>&1); rc=$?
+ok "init: a failed shared snapshot blocks setup and releases the lock" '[ "$rc" = 1 ] && grep -q "INIT STOP: could not snapshot" <<< "$o" && [ ! -e "$snapshot_proj/.devin-crew/snapshot.stamp" ] && [ ! -e "$snapshot_proj/.devin-crew/LOCK" ]'
 o=$(bash "$S/crew-init.sh" "$work/proj" "true" 2>&1); rc=$?
 ok "init: refuses without scopes.txt" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "INIT STOP"'
 stale="$work/stale-skill"; mkdir -p "$stale/scripts"; cp "$S/crew-doctor.sh" "$stale/scripts/"

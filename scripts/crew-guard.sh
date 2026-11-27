@@ -85,11 +85,17 @@ case "$cmd" in
     exit 0
     ;;
   snapshot)
-    list_files > "$crew/snapshot.files"
-    size=$(tr '\n' '\0' < "$crew/snapshot.files" | xargs -0 ls -l 2>/dev/null | awk '{s+=$5} END{print s+0}')
+    set -o pipefail
+    files=$(mktemp "$crew/snapshot.XXXXXX") || exit 1
+    archive="$files.tgz"
+    trap 'rm -f "$files" "$archive"' EXIT
+    list_files > "$files" || exit 1
+    size=$(tr '\n' '\0' < "$files" | xargs -0 ls -l 2>/dev/null | awk '{s+=$5} END{print s+0}')
     if [ "$size" -gt 2147483648 ]; then echo "refusing: $size bytes to snapshot (>2GB). Set CREW_PRUNE or narrow the project." >&2; exit 1; fi
-    tr '\n' '\0' < "$crew/snapshot.files" | tar -czf "$crew/snapshot.tgz" --null -T -
-    touch "$crew/snapshot.stamp"
+    tr '\n' '\0' < "$files" | tar -czf "$archive" --null -T - || exit 1
+    rm -f "$crew/snapshot.stamp" && mv -f "$archive" "$crew/snapshot.tgz" &&
+      mv -f "$files" "$crew/snapshot.files" || exit 1
+    touch "$crew/snapshot.stamp" || exit 1
     echo "snapshot: $(wc -l < "$crew/snapshot.files" | tr -d ' ') files, $size bytes -> $crew/snapshot.tgz"
     ;;
   check)

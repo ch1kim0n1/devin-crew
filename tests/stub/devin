@@ -4,7 +4,7 @@
 case "${1:-}" in
   version) echo "devin stub 0.0.0"; exit 0;;
   auth) if [ "${STUB_AUTH:-in}" = in ]; then echo "Logged in (via Stub)."; exit 0; else echo "Not logged in."; exit 1; fi;;
-  models) echo "SWE-2"; [ "${STUB_NO_MODEL:-0}" = 1 ] || echo "  swe-2-flash-high   SWE-2 Flash High  [Free]"; exit 0;;
+  models) [ "${STUB_NO_MODEL:-0}" = 1 ] || printf '  %s\n' "${STUB_AVAILABLE_MODEL:-swe-2-flash-high}"; exit 0;;
   list) echo "[]"; exit 0;;
   rm) exit 0;;
 esac

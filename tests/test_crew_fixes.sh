@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression tests for devin-crew bugs 1-4. usage: bash test_crew_fixes.sh <skill_dir>
+# Regression tests for devin-crew. usage: bash test_crew_fixes.sh <skill_dir>
 set -u
 SK=$(cd "$1" && pwd); T=$(mktemp -d); fail=0
 ok()  { echo "PASS $1"; }
@@ -28,7 +28,8 @@ PATH="$T/bin:$PATH" CREW_BUDGET_OVERRIDE=1 bash "$SK/scripts/devin-lane.sh" "$P"
 
 # ---- bug 1b: a fix brief (no task id) only revives tasks already in review/failed, never open ones
 P=$T/p1b; mkproj "$P"; echo "fix" > "$P/.devin-crew/prompts/L-fix-1.md"
-sed -i '' 's/| t1 | L | a\/\*\* | - | true | open |/| t1 | L | a\/** | - | true | review |/' "$P/.devin-crew/TASKS.md"
+sed 's/| t1 | L | a\/\*\* | - | true | open |/| t1 | L | a\/** | - | true | review |/' "$P/.devin-crew/TASKS.md" > "$T/tasks"
+mv "$T/tasks" "$P/.devin-crew/TASKS.md"
 PATH="$T/bin:$PATH" CREW_BUDGET_OVERRIDE=1 bash "$SK/scripts/devin-lane.sh" "$P" L - "$P/.devin-crew/prompts/L-fix-1.md" >/dev/null 2>&1
 [ "$(status_of "$P" t2)" = open ] && ok "bug1b: fix brief leaves open t2 alone" || bad "bug1b: t2 expected open, got $(status_of "$P" t2)"
 
@@ -47,7 +48,8 @@ r=$(mklog c3 'Error: Agent error: Reached free model rate limit. Your limit will
 P=$T/p3; mkproj "$P"; C=$P/.devin-crew
 echo "failed(1)" > $C/lanes/L.status; echo claude-sonnet-5-5-high > $C/lanes/L.model; echo sess > $C/lanes/L.sid
 echo EXIT-1 > $C/lanes/L.needs-user; echo brain > $C/conduct/L.state; echo why > $C/conduct/L.brain; touch $C/conduct/L.reported
-sed -i '' 's/| t1 | L | a\/\*\* | - | true | open |/| t1 | L | a\/** | - | true | failed |/' $C/TASKS.md
+sed 's/| t1 | L | a\/\*\* | - | true | open |/| t1 | L | a\/** | - | true | failed |/' "$C/TASKS.md" > "$T/tasks"
+mv "$T/tasks" "$C/TASKS.md"
 if [ -f "$SK/scripts/crew-lane-reset.sh" ]; then
   bash "$SK/scripts/crew-lane-reset.sh" "$P" L >/dev/null 2>&1
   [ ! -f $C/lanes/L.model ] && ok "bug4: sticky model cleared" || bad "bug4: model file still there"
@@ -101,5 +103,26 @@ out=$(bash "$SK/scripts/crew-worktree.sh" "$P" merge L 2>&1); rc=$?
 echo x > "$P/x/f.js"; echo a4 > "$W/x/f.js"                                                                                            # outside edit in main
 out=$(bash "$SK/scripts/crew-worktree.sh" "$P" merge L 2>&1); rc=$?
 [ $rc -ne 0 ] && [ "$(cat "$P/x/f.js")" = x ] && ok "bug12: an outside edit in main still conflicts, nothing overwritten" || bad "bug12 outside: rc=$rc out=$out"
+
+# Dependency validation must match the rows and milestone order the conductor will see.
+P=$T/dependencies; mkdraft "$P" t1
+m1="$P/.devin-crew/draft/milestones/m1.tasks"; m2="$P/.devin-crew/draft/milestones/m2.tasks"
+t1='| t1 | core | src/a.py | - | true | open |'
+t2='| t2 | tests | tests/test_a.py | t1 | true | open |'
+printf '%s\n%s' "$t1" "$t2" > "$m1"
+out=$(bash "$SK/scripts/crew-plan.sh" "$P" check); rc=$?
+[ "$rc" = 0 ] && grep -q '2 task(s), 2 lane(s)' <<< "$out" && ok "plan counts a valid final row without a newline" || bad "plan skipped valid final row"
+printf '%s\n%s' "$t1" '| t2 | tests | tests/test_a.py | - | true | open |' > "$m1"
+out=$(bash "$SK/scripts/crew-plan.sh" "$P" check); rc=$?
+[ "$rc" = 1 ] && grep -q 't2: tests task with no depends' <<< "$out" && ok "plan validates a final row without a newline" || bad "plan skipped invalid final row"
+printf '%s\n%s\n' '| t1 | core | src/a.py | t2 | true | open |' "$t2" > "$m1"
+out=$(bash "$SK/scripts/crew-plan.sh" "$P" check); rc=$?
+[ "$rc" = 1 ] && grep -q 'dependency cycle' <<< "$out" && ok "plan rejects a circular dependency" || bad "plan accepted a circular dependency"
+printf '%s\n' '| t1 | core | src/a.py | t2 | true | open |' > "$m1"
+printf '%s\n' "$t2" > "$m2"
+out=$(bash "$SK/scripts/crew-plan.sh" "$P" check); rc=$?
+[ "$rc" = 1 ] && grep -q 't1 depends on later milestone task t2' <<< "$out" && ok "plan rejects a dependency on a later milestone" || bad "plan accepted a dependency on a later milestone"
+printf '%s\n' "$t1" > "$m1"
+bash "$SK/scripts/crew-plan.sh" "$P" check >/dev/null && ok "plan allows a dependency on an earlier milestone" || bad "plan rejected a dependency on an earlier milestone"
 
 rm -rf "$T"; [ $fail -eq 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

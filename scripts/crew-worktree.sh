@@ -31,7 +31,7 @@ case "$cmd" in
       git -C "$wt" add -A -- . && git -C "$wt" -c user.name=crew -c user.email=crew@local commit -q --no-verify -m "crew base"
     fi
     for l in $links; do [ -e "$proj/$l" ] && ln -s "$proj/$l" "$wt/$l"; done
-    echo "$wt" > "$crew/lanes/$lane.workdir"
+    printf '%s\n' "$wt" > "$crew/lanes/$lane.workdir" || exit 1
     echo "worktree: $wt"
     if [ -f "$crew/scopes.txt" ]; then bash "$(dirname "$0")/crew-guard.sh" "$proj" scopes | grep "SCOPE OVERLAP" | sed 's/^/WARNING: /'; fi
     true

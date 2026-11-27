@@ -45,12 +45,12 @@ notify() { bash "$here/crew-notify.sh" "devin-crew: $*" >/dev/null 2>&1; }
 attention() { { echo "$1"; cat "$ap/last.digest" 2>/dev/null; } > "$ap/ATTENTION"; log "ATTENTION: $1"; notify "$1"; echo "ATTENTION: $1"; exit 0; }
 authorized() { [ "${CREW_SHIP_OK:-0}" = 1 ] || grep -qiE '^ship: *yes' "$crew/PLAN.md" 2>/dev/null; }
 git_root() { [ "$(git -C "$proj" rev-parse --show-toplevel 2>/dev/null)" = "$proj" ]; }
-prepare_lane() { # a lane that is about to get work needs a worktree that already contains everything merged so far
+refresh_lane_on_launch() { # the conductor prepares the worktree before launching the lane
   local l=$1 st; st=$(cat "$crew/lanes/$l.status" 2>/dev/null || echo none)
   git_root || return 0
   case "$st" in running|waking) return 0;; esac
-  [ -d "$crew/wt/$l" ] && bash "$here/crew-worktree.sh" "$proj" remove "$l" >/dev/null 2>&1
-  bash "$here/crew-worktree.sh" "$proj" add "$l" >/dev/null 2>&1 || log "WARN worktree add failed for $l"
+  mkdir -p "$crew/conduct" && touch "$crew/conduct/$l.refresh-worktree" ||
+    attention "WORKTREE $l: could not queue a worktree refresh"
 }
 lanes_of_rows() { awk -F'|' 'function t(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x} NF>=7 {id=t($2); if(id=="id"||id==""||id ~ /^-/||id ~ /^:/) next; print t($3)}' "$1" | sort -u; }
 ms_files() { ls "$crew"/milestones/m*.tasks 2>/dev/null | sed -E 's#.*/m([0-9]+)\.tasks#\1#' | sort -n; }
@@ -58,9 +58,9 @@ load_next_ms() { # appends the next unloaded milestone's rows to TASKS.md; print
   local n f name
   for n in $(ms_files); do grep -qx "$n" "$ap/loaded" 2>/dev/null && continue
     f="$crew/milestones/m$n.tasks"; name=$(sed -n 's/^# *//p' "$f" | head -1)
+    for l in $(lanes_of_rows "$f"); do refresh_lane_on_launch "$l"; bash "$here/crew-conduct.sh" "$proj" --reset "$l" merged >/dev/null 2>&1; done
     [ -f "$crew/TASKS.md" ] || printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n' > "$crew/TASKS.md"
     grep -E '^\|' "$f" | grep -vE '^\| *(id|-)' >> "$crew/TASKS.md"
-    for l in $(lanes_of_rows "$f"); do prepare_lane "$l"; bash "$here/crew-conduct.sh" "$proj" --reset "$l" merged >/dev/null 2>&1; done
     echo "$n" >> "$ap/loaded"; echo "$n" > "$ap/current"; echo 0 > "$ap/rounds"; : > "$ap/lastsig"
     echo "M$n${name:+: $name}" > "$crew/MILESTONE"; rm -f "$crew/conduct/qa.state"; log "loaded milestone $n ${name:+($name)}"; echo "$n"; return 0; done
   return 1
@@ -75,12 +75,13 @@ fix_tasks() { # QA-FAIL: FIXTASK lines of the newest verdict -> task rows, brief
     acc=""; for ((i = 2; i < n - 1; i++)); do acc="${acc:+$acc|}${p[$i]}"; done; acc=$(trim "$acc")
     id="fix${m}r${r}-$k"
     if [ "$lane" = new ] || [ -z "$lane" ] || ! grep -q "^$lane	" "$crew/scopes.txt" 2>/dev/null; then lane="fix${m}r${r}-$k"; fi
+    refresh_lane_on_launch "$lane"
     [ -n "$(tail -c1 "$crew/scopes.txt" 2>/dev/null)" ] && echo >> "$crew/scopes.txt"
     for g in $(printf '%s' "$files" | tr ',' ' '); do printf '%s\t%s\n' "$lane" "$g" >> "$crew/scopes.txt"; done
     printf '%s\n' "$acc" > "$crew/acceptance/$id.sh"
     printf '| %s | %s | %s | - | bash %s | open |\n' "$id" "$lane" "$(printf '%s' "$files" | tr ',' ' ')" "$crew/acceptance/$id.sh" >> "$crew/TASKS.md"
     printf 'The QA Devin failed the milestone. Fix exactly this: %s\nFiles you own for this: %s\nAcceptance (must pass): %s\nFull QA verdict, for context: %s\nRead %s first. Change nothing else.\n' "$goal" "$files" "$acc" "$v" "$crew/CONTRACTS.md" > "$crew/prompts/$id.md"
-    prepare_lane "$lane"; bash "$here/crew-conduct.sh" "$proj" --reset "$lane" merged >/dev/null 2>&1
+    bash "$here/crew-conduct.sh" "$proj" --reset "$lane" merged >/dev/null 2>&1
   done < "$v"
   [ "$k" -gt 0 ] || return 1
   echo "$r" > "$ap/rounds"; log "QA-FAIL round $r: $k fix task(s) from $(basename "$v")"; return 0

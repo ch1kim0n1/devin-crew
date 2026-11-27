@@ -14,11 +14,18 @@ row=$(awk -F'|' -v id="$id" 'function t(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x
 IFS='|' read -r _ _ lane scope dep acc _ <<< "$row"; lane=$(echo $lane); alt="$lane-alt"
 [ -s "$crew/prompts/$id.md" ] || { echo "RACE STOP: no brief prompts/$id.md"; exit 1; }
 [ -e "$crew/race/$id" ] && { echo "already racing: $(cat "$crew/race/$id")"; exit 0; }
+for racer in "$lane" "$alt"; do
+  wt="$crew/wt/$racer"
+  if [ "$(cat "$crew/lanes/$racer.workdir" 2>/dev/null)" = "$wt" ] &&
+     [ "$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null)" = "$wt" ]; then
+    continue
+  fi
+  bash "$here/crew-worktree.sh" "$proj" add "$racer" || { echo "RACE STOP: could not prepare worktree for $racer"; exit 1; }
+done
 mkdir -p "$crew/race"
 printf '| %s-alt | %s | %s | %s | %s | open |\n' "$id" "$alt" "$(echo $scope)" "$(echo $dep)" "$(echo $acc)" >> "$crew/TASKS.md"
 [ -n "$(tail -c1 "$crew/scopes.txt")" ] && echo >> "$crew/scopes.txt"
 awk -F'\t' -v l="$lane" -v a="$alt" '$1==l{print a "\t" $2}' "$crew/scopes.txt" >> "$crew/scopes.txt"
 { cat "$crew/prompts/$id.md"; printf '\nNote: another Devin solves this same task independently in its own worktree; only the better result is merged. Stay inside your own directory and do not wait for it.\n'; } > "$crew/prompts/$id-alt.md"
 [ -s "$crew/prompts/$id.role" ] && cp "$crew/prompts/$id.role" "$crew/prompts/$id-alt.role"
-bash "$here/crew-worktree.sh" "$proj" add "$lane" >/dev/null 2>&1; bash "$here/crew-worktree.sh" "$proj" add "$alt" >/dev/null 2>&1
 echo "$lane $alt" > "$crew/race/$id"; echo "RACE $id: $lane vs $alt"

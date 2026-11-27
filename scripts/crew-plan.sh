@@ -12,6 +12,7 @@ set -u
 proj=$(cd "$1" && pwd -P) || exit 2
 mode=${2:-}; shift 2 2>/dev/null
 here="$(cd "$(dirname "$0")" && pwd)"; crew="$proj/.devin-crew"; dr="$crew/draft"
+trim() { local x=$1; x=${x#"${x%%[![:space:]]*}"}; echo "${x%"${x##*[![:space:]]}"}"; }
 case "$mode" in
   draft)
     goal=${1:-}; shift; ans=""; print=0
@@ -52,42 +53,55 @@ BRIEF
   check)
     bad=0; say() { echo "$*"; }; prob() { say "PROBLEM: $*"; bad=1; }
     for f in PLAN.md SPEC.md CONTRACTS.md ROSTER.md scopes.txt baseline.cmd QUESTIONS.md; do [ -s "$dr/$f" ] || prob "draft/$f missing or empty"; done
-    ls "$dr"/milestones/m*.tasks >/dev/null 2>&1 || prob "no milestones/m<N>.tasks"
-    ids=""; lanes=""; ntask=0
-    for mf in $(ls "$dr"/milestones/m*.tasks 2>/dev/null | sort -V); do
-      while IFS= read -r row; do
+    lanes=""; graph=""; ntask=0; nm=0
+    istest() { [ "$1" = tests ] || grep -q "^- $1 (tests)" "$dr/ROSTER.md" 2>/dev/null || [ "$(head -1 "$dr/prompts/$2.role" 2>/dev/null)" = tests ]; }
+    for mf in "$dr"/milestones/m*.tasks; do
+      [ -f "$mf" ] || continue
+      milestone=${mf##*/m}; milestone=${milestone%.tasks}
+      case "$milestone" in ''|0*|*[!0-9]*) prob "invalid milestone file: ${mf##*/}"; continue;; esac
+      nm=$((nm + 1)); other=0; loose=""
+      while IFS= read -r row || [ -n "$row" ]; do
         case "$row" in '|'*) ;; *) continue;; esac
-        IFS='|' read -r _ id lane _ _ acc st _ <<< "$row"; id=$(echo $id); lane=$(echo $lane); st=$(echo $st)
-        case "$id" in id|-*|"") continue;; esac
-        ntask=$((ntask + 1)); ids="$ids $id "; lanes="$lanes$lane"$'\n'
+        IFS='|' read -r _ id lane _ dep acc st _ <<< "$row"
+        id=$(trim "$id"); lane=$(trim "$lane"); dep=$(trim "$dep"); st=$(trim "$st")
+        case "$id" in id|-*|:*|"") continue;; esac
+        ntask=$((ntask + 1)); lanes="$lanes$lane"$'\n'
+        graph+="$id|$milestone|$dep"$'\n'
         [ -n "$st" ] || prob "$id: no status cell"
         [ -s "$dr/prompts/$id.md" ] || prob "$id: no brief prompts/$id.md"
         grep -q "^$lane	" "$dr/scopes.txt" 2>/dev/null || prob "$id: lane $lane has no scope in scopes.txt"
-        [ -n "$(echo $acc)" ] || prob "$id: empty acceptance command"
+        [ -n "$(trim "$acc")" ] || prob "$id: empty acceptance command"
         [ -s "$dr/prompts/$id.role" ] && { r=$(head -1 "$dr/prompts/$id.role"); [ -f "$here/../templates/roles/$r.md" ] || prob "$id: unknown role $r"; }
-      done < "$mf"
-    done
-    for mf in "$dr"/milestones/m*.tasks; do [ -e "$mf" ] || continue
-      while IFS= read -r row; do case "$row" in '|'*) ;; *) continue;; esac
-        IFS='|' read -r _ id _ _ dep _ <<< "$row"; id=$(echo $id); case "$id" in id|-*|"") continue;; esac
-        for d in $(echo "$dep" | tr ',' ' '); do [ "$d" = - ] && continue; case "$ids" in *" $d "*) ;; *) prob "$id depends on unknown task $d";; esac; done
-      done < "$mf"; done
-    # test-first: a tests-role task checked before the code it tests merges always fails, so it must depend on that task
-    istest() { [ "$1" = tests ] || grep -q "^- $1 (tests)" "$dr/ROSTER.md" 2>/dev/null || [ "$(head -1 "$dr/prompts/$2.role" 2>/dev/null)" = tests ]; }
-    for mf in "$dr"/milestones/m*.tasks; do [ -e "$mf" ] || continue
-      other=0; loose=""
-      while IFS= read -r row; do case "$row" in '|'*) ;; *) continue;; esac
-        IFS='|' read -r _ id lane _ dep _ <<< "$row"; id=$(echo $id); lane=$(echo $lane); dep=$(echo $dep); case "$id" in id|-*|"") continue;; esac
-        if istest "$lane" "$id"; then [ "$dep" = - ] && loose="$loose $id"; else other=1; fi
+        if istest "$lane" "$id"; then
+          case "$dep" in ''|-) loose="$loose $id";; esac
+        else other=1; fi
       done < "$mf"
       [ "$other" = 1 ] && for id in $loose; do prob "$id: tests task with no depends; list the task(s) whose code its acceptance runs"; done
     done
+    [ "$nm" -gt 0 ] || prob "no milestones/m<N>.tasks"
+    # Check dependencies against the scheduler's milestone order, then visit each task to detect cycles.
+    while IFS= read -r problem; do prob "$problem"; done < <(printf '%s' "$graph" | awk -F '|' '
+      function visit(id,    i, n, deps, dep) {
+        state[id]=1
+        n=split(dependencies[id], deps, /[ ,]+/)
+        for (i=1; i<=n; i++) {
+          dep=deps[i]
+          if (dep=="" || dep=="-") continue
+          if (!(dep in milestone)) print id " depends on unknown task " dep
+          else if (milestone[dep] > milestone[id]) print id " depends on later milestone task " dep
+          else if (state[dep]==1) print "dependency cycle: " id " depends on " dep
+          else if (!state[dep]) visit(dep)
+        }
+        state[id]=2
+      }
+      { if ($1 in milestone) print "duplicate task ID: " $1
+        milestone[$1]=$2+0; dependencies[$1]=$3; ids[++count]=$1 }
+      END { for (i=1; i<=count; i++) if (!state[ids[i]]) visit(ids[i]) }')
     nlu=$(printf '%s' "$lanes" | sort -u | grep -c . || true)
     [ "${nlu:-0}" -le 5 ] || prob "$nlu lanes (cap 5)"
     dup=$(awk -F'\t' 'NF>=2{k=$2; if (k in o && o[k]!=$1) print k; o[k]=$1}' "$dr/scopes.txt" 2>/dev/null | head -3)
     [ -z "$dup" ] || prob "two lanes own the same path: $(echo $dup)"
     head -1 "$dr/CONTRACTS.md" 2>/dev/null | grep -q '^version:' || prob "CONTRACTS.md must start with version: 1"
-    nm=$(ls "$dr"/milestones/m*.tasks 2>/dev/null | wc -l | tr -d ' ')
     say "DRAFT: $nm milestone(s), $ntask task(s), ${nlu:-0} lane(s); baseline: $(head -1 "$dr/baseline.cmd" 2>/dev/null)"
     say "$(head -1 "$dr/PLAN.md" 2>/dev/null)"
     q=$(head -c 900 "$dr/QUESTIONS.md" 2>/dev/null); [ "$(echo $q)" = NONE ] && say "QUESTIONS: none" || { say "QUESTIONS:"; printf '%s\n' "$q" | head -5; }

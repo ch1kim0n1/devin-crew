@@ -21,7 +21,22 @@ crew="$proj/.devin-crew"
 sid_file="$crew/lanes/$lane.sid"; model_file="$crew/lanes/$lane.model"
 skill_dir=$(cd "$(dirname "$0")/.." && pwd)
 msg="$skill_dir/scripts/lane-msg.sh"; obs="$skill_dir/scripts/crew-observe.sh"
-workdir="$proj"; [ -f "$crew/lanes/$lane.workdir" ] && workdir=$(cat "$crew/lanes/$lane.workdir")
+workdir="$proj"; workdir_file="$crew/lanes/$lane.workdir"
+if [ -f "$workdir_file" ]; then
+  workdir=$(cat "$workdir_file")
+  if [ -z "$workdir" ] || ! resolved_workdir=$(cd "$workdir" 2>/dev/null && pwd -P); then
+    echo "lane $lane work directory is unavailable: $workdir" >&2
+    exit 2
+  fi
+  workdir=$resolved_workdir
+fi
+if { [ -f "$crew/worktree-required" ] || { [ -d "$crew/wt" ] && [ ! -f "$crew/snapshot.stamp" ]; }; } &&
+   [ ! -f "$crew/lanes/$lane.readonly" ] &&
+   { [ "$workdir" = "$proj" ] || [ ! -f "$workdir/.git" ] ||
+     [ "$(git -C "$workdir" rev-parse --show-toplevel 2>/dev/null)" != "$workdir" ]; }; then
+  echo "lane $lane requires a Git worktree. Prepare it before launching." >&2
+  exit 2
+fi
 ev() { [ "$dry" -eq 1 ] || echo "$(date '+%F %T') $lane $*" >> "$crew/events.log"; }
 
 # Lane-minutes budget (crew-budget.sh): refuse to start once exceeded, unless the user said to go on.
