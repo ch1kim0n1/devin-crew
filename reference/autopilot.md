@@ -16,6 +16,7 @@ With `ship: per-task` steps 5 and 6 change: every task is its own PR (`reference
 
 ## Authorization and safety
 - Pushing a branch and opening a PR need the user's word at the go (`crew-plan.sh go --ship` writes `ship: yes` in PLAN.md, or `CREW_SHIP_OK=1`). Without it the run ends at `REPORT.md`.
+- A draft pull request, on the user's word (also mid-run): a line `pr: draft` in PLAN.md, or `CREW_PR_DRAFT=1`; it applies to per-task PRs too.
 - `crew-ship.sh` never pushes the base branch or main, never forces, refuses without a PASS verdict (`CREW_SHIP_UNVERIFIED=1` is the user's override), blocks on secrets (reports file:line only), leaves out files that were already modified before the crew and no lane owns (`prework.files`), needs `gh auth login`.
 - Devin errors (`NEEDS-USER`: limit, login, trust, model, crash) always stop the run; nothing is retried without the user.
 - Caps: `CREW_AUTOPILOT_MAX_SECS` (6 h), the lane-minute budget (`BUDGET`), `CREW_QA_ROUNDS`.

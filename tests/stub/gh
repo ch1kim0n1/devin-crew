@@ -3,8 +3,8 @@
 echo "$*" >> "${STUB_OUT:-/tmp}/gh.log"
 case "${1:-} ${2:-}" in
   "auth status") [ "${STUB_GH_AUTH:-in}" = in ] && exit 0 || { echo "not logged in"; exit 1; };;
-  "pr create") [ "${STUB_GH_CREATE:-ok}" = ok ] || { echo "GraphQL: stub refused"; exit 1; }
-    c=$(( $(cat "${STUB_OUT:-/tmp}/prcount" 2>/dev/null || echo 6) + 1 )); echo "$c" > "${STUB_OUT:-/tmp}/prcount"; echo "https://github.com/stub/repo/pull/$c"; exit 0;;
+  "pr create") case "${STUB_GH_CREATE:-ok}" in ok|trailing) ;; nourl) echo "stub printed no url"; exit 0;; *) echo "GraphQL: stub refused"; exit 1;; esac
+    c=$(( $(cat "${STUB_OUT:-/tmp}/prcount" 2>/dev/null || echo 6) + 1 )); echo "$c" > "${STUB_OUT:-/tmp}/prcount"; echo "https://github.com/stub/repo/pull/$c"; [ "${STUB_GH_CREATE:-ok}" = trailing ] && echo "a warning printed after the url"; exit 0;;
   # PR and issue state come from files the test writes: $STUB_OUT/gh/pr-<n>.json, issue-<n>.json, prlist.json
   "pr view") n=${3##*/}; cat "${STUB_OUT:-/tmp}/gh/pr-$n.json" 2>/dev/null || echo '{"state":"OPEN","comments":[]}'; exit 0;;
   "pr comment") n=${3##*/}; f="${STUB_OUT:-/tmp}/gh/pr-$n.json"; mkdir -p "${f%/*}"

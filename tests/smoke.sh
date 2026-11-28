@@ -517,6 +517,16 @@ ok "ship: branch, commit, push and PR in one call" '[ "$rc" = 0 ] && printf "%s"
 ok "ship: PR body is REPORT.md, base is main" 'grep -q "pr create --base main --head crew/add-the-b-module .*--body-file .*REPORT.md" $STUB_OUT/gh.log'
 ok "ship: the user's own prior WIP and .devin-crew stay out of the commit" '! git -C $sp show --name-only --format= HEAD | grep -qE "user-wip|devin-crew" && git -C $sp show --name-only --format= HEAD | grep -q "src/b.txt"'
 ok "ship: never pushed main" '[ "$(git -C $sr rev-parse main)" = "$(git -C $sp rev-parse main)" ]'
+lastpr() { grep '^pr create' "$STUB_OUT/gh.log" | tail -1; }
+ok "ship: a PR is not a draft unless asked" 'lastpr | grep -qv -- "--draft"'
+printf '# Objective: add the b module\npr: draft\n' > "$sp/.devin-crew/PLAN.md"; CREW_SHIP_OK=1 bash "$S/crew-ship.sh" "$sp" pr >/dev/null 2>&1
+ok "ship: 'pr: draft' in PLAN.md opens a draft" 'lastpr | grep -q -- "--draft"'
+printf '# Objective: add the b module\n' > "$sp/.devin-crew/PLAN.md"; CREW_PR_DRAFT=1 CREW_SHIP_OK=1 bash "$S/crew-ship.sh" "$sp" pr >/dev/null 2>&1
+ok "ship: CREW_PR_DRAFT=1 opens a draft" 'lastpr | grep -q -- "--draft"'
+o=$(STUB_GH_CREATE=trailing CREW_SHIP_OK=1 bash "$S/crew-ship.sh" "$sp" pr 2>&1); u=$(cat "$sp/.devin-crew/PR_URL")
+ok "ship: the PR url is found even when gh prints something after it" 'printf "%s" "$o" | grep -Eq "^SHIP OK https://github.com/stub/repo/pull/[0-9]+$" && printf "%s" "$u" | grep -Eq "^https://github.com/stub/repo/pull/[0-9]+$"'
+o=$(STUB_GH_CREATE=nourl CREW_SHIP_OK=1 bash "$S/crew-ship.sh" "$sp" pr 2>&1); rc=$?
+ok "ship: no PR url from gh is a failure, not SHIP OK" '[ "$rc" = 1 ] && ! printf "%s" "$o" | grep -q "SHIP OK" && [ "$(cat $sp/.devin-crew/PR_URL)" = "$u" ]'
 
 echo "--- autopilot"
 FIXDONES="$DONES"$'\nDONE fix1r1-1: files changed: flag.txt | verified: test -f flag.txt -> ok | contracts: v1 | open issues for other lanes: none'

@@ -4,6 +4,7 @@
 #   bash crew-ship.sh <project> commit "<message>"                             commit on the crew branch only (e.g. after each milestone)
 #   bash crew-ship.sh <project> pr [--base <branch>] [--draft]                 push the crew branch and open the PR
 #   bash crew-ship.sh <project> --print                                        dry run: what would happen, changes nothing
+# Draft PRs: --draft, `pr: draft` in .devin-crew/PLAN.md, or CREW_PR_DRAFT=1.
 #   bash crew-ship.sh <project> task <task-id> [--base <branch>] [--draft] [--print]   per-task mode: one branch and PR per task
 # Per-task mode (`ship: per-task` in PLAN.md, or CREW_SHIP=per-task plus CREW_SHIP_OK=1): the task's in-scope changes are committed in its
 # lane's worktree on `issue-<n>-<slug>` (a line `issue: <n>` in prompts/<task-id>.md; else `crew/<task-id>-<slug>`), pushed, and opened as
@@ -21,6 +22,8 @@ case "${1:-}" in all|commit|pr|task) mode=$1; shift;; esac
 [ "$mode" = commit ] && { msg=${1:-}; shift; }
 tid=""; [ "$mode" = task ] && { tid=${1:-}; shift; }
 while [ $# -gt 0 ]; do case "$1" in --base) base=$2; shift 2;; --draft) draft=--draft; shift;; --print) dry=1; shift;; *) shift;; esac; done
+# `pr: draft` in PLAN.md (or CREW_PR_DRAFT=1) opens the PR as a draft: the user's word, even mid-run.
+{ [ "${CREW_PR_DRAFT:-0}" = 1 ] || grep -qiE '^pr: *draft' "$crew/PLAN.md" 2>/dev/null; } && draft=--draft
 stop() { echo "SHIP STOP: $*"; exit 1; }
 git -C "$proj" rev-parse --show-toplevel >/dev/null 2>&1 && [ "$(git -C "$proj" rev-parse --show-toplevel)" = "$proj" ] || stop "$proj is not a git repo root"
 auth=${CREW_SHIP_OK:-0}; grep -qiE '^ship: *(yes|per-task)' "$crew/PLAN.md" 2>/dev/null && auth=1
@@ -42,7 +45,9 @@ push_branch() { # dir branch; never forced
 }
 create_pr() { # base head title body_file -> URL
   local out; out=$(cd "$proj" && gh pr create --base "$1" --head "$2" --title "$3" --body-file "$4" $draft 2>&1) || { echo "$out" | tail -3; return 1; }
-  printf '%s\n' "$out" | tail -1
+  local url; url=$(printf '%s\n' "$out" | grep -Eo 'https://[^ ]+/pull/[0-9]+' | tail -1)
+  [ -n "$url" ] || { echo "gh pr create printed no PR url:"; printf '%s\n' "$out" | tail -3; return 1; }
+  printf '%s\n' "$url"
 }
 
 if [ "$mode" = task ]; then

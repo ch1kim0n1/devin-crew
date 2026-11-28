@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New: draft pull requests with `pr: draft` in PLAN.md or `CREW_PR_DRAFT=1`.
+- Fix: `crew-ship.sh` now requires a real pull request URL from `gh pr create` before it reports `SHIP OK`.
 - New: per-task shipping (`crew-plan.sh go --ship-per-task`, or `CREW_SHIP=per-task` with `CREW_SHIP_OK=1`): one branch and PR per task, `issue: <n>` in a brief becomes `Closes #<n>`, dependents and the lane's next task wait for the merge and start from the updated base (#5).
 - New: `crew-pr.sh`: `[manager]` / `[lane-x]` comment review loop run by the conductor, `wait` for lanes, `watch` for the manager, `#<n>` issue dependencies in TASKS.md, `PR-WAIT` digest. Only the `gh` account's and repo owners', members' and collaborators' comments count (#6).
 - New: `CREW_LANE_UI=tmux|terminal|iterm` runs lanes as visible interactive Devin sessions (#7).
