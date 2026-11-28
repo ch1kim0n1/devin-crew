@@ -25,11 +25,12 @@ case "$kind" in
     n=1; while [ -e "$crew/prompts/qa-$n.md" ]; do n=$((n + 1)); done
     ms=$(head -1 "$crew/MILESTONE" 2>/dev/null)
     : > "$crew/qa/specialist-lanes"; mkdir -p "$crew/qa/spec"
+    from=$(bash "$here/crew-pr.sh" "$proj" diffbase)
     for sp in $(bash "$here/crew-roles.sh" specialists "$proj"); do
       [ -f "$here/../templates/roles/$sp.md" ] || continue
       lane="spec-$sp-$n"; out="$crew/qa/spec/$n-$sp.md"; brief="$crew/prompts/$lane.md"
       cat > "$brief" <<BRIEF
-Review the finished milestone${ms:+ "$ms"} of this project ($proj) as the $sp specialist. All lanes have exited and their work is in this tree: see it with git status and git diff HEAD, and read the changed and new files. Read $crew/PLAN.md for the objective and $crew/CONTRACTS.md for the interfaces. Write your findings to $out in your role's format (the only file you write), then post your DONE line.
+Review the finished milestone${ms:+ "$ms"} of this project ($proj) as the $sp specialist. All lanes have exited and their work is in this tree: see it with git status and git diff $from, and read the changed and new files. Read $crew/PLAN.md for the objective and $crew/CONTRACTS.md for the interfaces. Write your findings to $out in your role's format (the only file you write), then post your DONE line.
 BRIEF
       echo "$proj" > "$crew/lanes/$lane.workdir"; : > "$crew/lanes/$lane.readonly"; rm -f "$out"
       CREW_ROLE=$sp bash "$here/crew-launch.sh" "$proj" lane "$lane" - "$brief" >/dev/null 2>&1 && { echo "$lane" >> "$crew/qa/specialist-lanes"; echo "$lane"; }
@@ -41,12 +42,14 @@ BRIEF
     ms=$(head -1 "$crew/MILESTONE" 2>/dev/null)
     lanes=$(awk -F'|' 'function t(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x} NF>=7 {id=t($2); if(id=="id"||id==""||id ~ /^-/||id ~ /^:/) next; printf "- %s (lane %s): acceptance: %s\n", id, t($3), t($6)}' "$crew/TASKS.md" 2>/dev/null)
     prev=$(newest)
+    from=$(bash "$here/crew-pr.sh" "$proj" diffbase)
     cat > "$brief" <<BRIEF
 QA the milestone${ms:+ "$ms"} of this project ($proj). All its lanes have exited and their work is merged into this tree. Read $crew/PLAN.md first (objective, milestones, contracts) and $crew/CONTRACTS.md.
 Tasks and their acceptance commands:
 ${lanes:-"(no TASKS.md rows)"}
 ${specs:+Specialist reviewers already looked (security, a11y, performance); read their findings: $specs Every HIGH they report must either appear in your verdict or be disproved with evidence in one line.
-}${prev:+Previous QA round: $prev (its findings were handed back to the lanes; confirm each is fixed, do not just trust that).}
+}$([ "$from" = HEAD ] || echo "Work arrived through merged pull requests, so the change under review is: git diff $from")
+${prev:+Previous QA round: $prev (its findings were handed back to the lanes; confirm each is fixed, do not just trust that).}
 Do, in this order, with evidence for each:
 1. bash $here/crew-verify.sh $proj  (reruns every acceptance command; FAIL, TIMEOUT and STALE-CONTRACT lines are failures)
 2. bash $here/crew-qa.sh $proj  (mechanical net over the whole change) and bash $here/crew-guard.sh $proj check, then bash $here/crew-guard.sh $proj regress (new failures against the baseline).

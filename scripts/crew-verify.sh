@@ -5,6 +5,7 @@
 #    Row format: | id | lane | scope | depends | acceptance | status |   (acceptance must not contain '|')
 # 2. Contract freshness: a lane's last DONE line must say `contracts: v<N>` with N = current CONTRACTS.md version.
 #    A lane a bump does not affect is cleared with: crew-verify.sh <project> ack-contract <lane>
+# Per-task mode (crew-pr.sh mode): a pass leaves the task in `review` (only a merged PR makes it `done`), shipped tasks are not rerun.
 # Exit 1 if any acceptance fails/times out or any lane built against a stale contract.
 # env: CREW_VERIFY_SECS=300 per-command timeout | CREW_VERIFY_IN=proj verify in the project root even for worktree lanes
 set -u
@@ -36,6 +37,7 @@ run_limited() { # secs cmd outfile [dir] -> exit code (124 = timed out); runs in
 
 lane_running() { [ "$(cat "$crew/lanes/$1.status" 2>/dev/null)" = running ]; }
 
+passed="done"; bash "$(dirname "$0")/crew-pr.sh" "$proj" mode && passed=review
 if [ -f "$crew/TASKS.md" ]; then
   out=$(mktemp)
   while IFS='|' read -r _ id lane _ _ acc tstatus _; do
@@ -47,11 +49,14 @@ if [ -f "$crew/TASKS.md" ]; then
     if lane_running "$lane"; then say "SKIP $id $lane: lane still running"; continue; fi
     # a task that never launched (status open) is not verified: its acceptance command can pass before any work was done
     [ "$tstatus" = open ] && { say "SKIP $id $lane: task not started (open)"; continue; }
+    # shipped tasks live on their own branch: rerunning them in a worktree that has moved on would fail them for nothing
+    [ "$tstatus" = pr ] && { say "SKIP $id $lane: PR open"; continue; }
+    [ "$tstatus" = "done" ] && [ "$passed" = review ] && { say "SKIP $id $lane: merged"; continue; }
     # A lane with a worktree is verified INSIDE it (its own work, before and after merge); CREW_VERIFY_IN=proj verifies the shared tree instead.
     vdir="$proj"; [ "${CREW_VERIFY_IN:-lane}" = lane ] && [ -f "$crew/lanes/$lane.workdir" ] && [ -d "$(cat "$crew/lanes/$lane.workdir")" ] && vdir=$(cat "$crew/lanes/$lane.workdir")
     run_limited "$secs" "$acc" "$out" "$vdir"; rc=$?
     tasks="$(cd "$(dirname "$0")" && pwd)/crew-tasks.sh"
-    if [ "$rc" -eq 0 ]; then bash "$tasks" "$proj" set "$id" "done"; say "PASS $id $lane: $acc"
+    if [ "$rc" -eq 0 ]; then bash "$tasks" "$proj" set "$id" "$passed"; say "PASS $id $lane: $acc"
     elif [ "$rc" -eq 124 ]; then bad=1; bash "$tasks" "$proj" set "$id" failed; say "TIMEOUT $id $lane (>${secs}s): $acc"; tail -n 5 "$out" | sed 's/^/    /' | tee -a "$log"
     else bad=1; bash "$tasks" "$proj" set "$id" failed; say "FAIL $id $lane (exit $rc): $acc"; tail -n 5 "$out" | sed 's/^/    /' | tee -a "$log"; fi
   done < "$crew/TASKS.md"

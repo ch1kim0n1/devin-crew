@@ -13,6 +13,13 @@ printf '%s\n' "$d" | grep -E '^(FAIL|WARN)' | head -8
 [ "$rc" -ne 0 ] && { echo "INIT STOP: preflight failed (fixes above). Tell the user; nothing was started."; exit 1; }
 l=$(bash "$here/crew-guard.sh" "$proj" lock 2>&1); [ $? -ne 0 ] && { echo "INIT STOP: $(printf '%s' "$l" | head -2 | tr '\n' ' ')"; exit 1; }
 trap 'bash "$here/crew-guard.sh" "$proj" unlock >/dev/null' EXIT
+if bash "$here/crew-pr.sh" "$proj" mode; then   # per-task PRs: worktrees come from origin/<base>, merged work returns by fast-forward
+  pb=$(bash "$here/crew-pr.sh" "$proj" base)
+  { [ "$(git -C "$proj" rev-parse --show-toplevel 2>/dev/null)" = "$proj" ] && git -C "$proj" remote get-url origin >/dev/null 2>&1; } ||
+    { echo "INIT STOP: per-task shipping needs a git repo root with an 'origin' remote"; exit 1; }
+  [ "$(git -C "$proj" symbolic-ref --short -q HEAD)" = "$pb" ] ||
+    { echo "INIT STOP: per-task shipping needs the project checked out on $pb (or set 'base: <branch>' in PLAN.md)"; exit 1; }
+fi
 ov=$(bash "$here/crew-guard.sh" "$proj" scopes 2>&1 | grep -E 'OVERLAP' | head -5)
 [ -n "$ov" ] && { printf '%s\n' "$ov"; echo "INIT STOP: scope overlap is a planning mistake: fix scopes.txt, then rerun"; exit 1; }
 if [ -n "$base" ]; then
@@ -22,7 +29,10 @@ if [ -n "$base" ]; then
   fi
 fi
 git -C "$proj" status --porcelain --untracked-files=all 2>/dev/null | sed -E 's/^.{3}//; s/.* -> //' | grep -v '^\.devin-crew/' > "$crew/prework.files"   # the user's own uncommitted work: crew-ship leaves it out unless a lane owns it
-[ -s "$crew/prework.files" ] && echo "note: $(wc -l < "$crew/prework.files" | tr -d ' ') file(s) were already modified before the crew; lanes start from them, the PR leaves out the ones no lane owns"
+if [ -s "$crew/prework.files" ]; then
+  from="lanes start from them, the PR leaves out the ones no lane owns"; [ -n "${pb:-}" ] && from="lanes start from origin/$pb without them"
+  echo "note: $(wc -l < "$crew/prework.files" | tr -d ' ') file(s) were already modified before the crew; $from"
+fi
 lanes=$(awk -F'\t' 'NF>=2 && $1!="" && $1 !~ /^#/ && $1 !~ /-rev$/ {print $1}' "$crew/scopes.txt" | sort -u)
 if [ "$(git -C "$proj" rev-parse --show-toplevel 2>/dev/null)" = "$proj" ]; then
   touch "$crew/worktree-required" || exit 1
@@ -39,6 +49,7 @@ if [ "$(git -C "$proj" rev-parse --show-toplevel 2>/dev/null)" = "$proj" ]; then
     fi
     echo "worktree: $ln"
   done
+  if [ -n "${pb:-}" ]; then mkdir -p "$crew/pr" && git -C "$proj" rev-parse "origin/$pb" > "$crew/pr/start" || exit 1; fi
 else
   if ! bash "$here/crew-guard.sh" "$proj" snapshot; then
     echo "INIT STOP: could not snapshot the shared project."

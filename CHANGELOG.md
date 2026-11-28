@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- New: per-task shipping (`crew-plan.sh go --ship-per-task`, or `CREW_SHIP=per-task` with `CREW_SHIP_OK=1`): one branch and PR per task, `issue: <n>` in a brief becomes `Closes #<n>`, dependents and the lane's next task wait for the merge and start from the updated base (#5).
+- New: `crew-pr.sh`: `[manager]` / `[lane-x]` comment review loop run by the conductor, `wait` for lanes, `watch` for the manager, `#<n>` issue dependencies in TASKS.md, `PR-WAIT` digest. Only the `gh` account's and repo owners', members' and collaborators' comments count (#6).
+- New: `CREW_LANE_UI=tmux|terminal|iterm` runs lanes as visible interactive Devin sessions (#7).
+- Fix: `crew-doctor.sh` fetches and warns when the branch is behind its upstream or the remote default branch, so lanes do not start from a stale base (#4).
+- Fix: `crew-ship.sh` reported success when `git push` or `gh pr create` failed (the exit status was hidden by a pipe).
+- Fix: `crew-ship.sh` could not commit under macOS's stock bash 3.2 (syntax error in the secrets scan).
+- Tests: smoke suite 259 checks.
+
 ## 1.4.1 (2026-11-21)
 
 Hotfix found by a real-Devin end-to-end run.

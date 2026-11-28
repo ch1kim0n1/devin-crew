@@ -5,7 +5,10 @@
 #                                                   conflict with earlier merges are listed, the rest still apply (exit 1)
 #   bash crew-worktree.sh <project> sync <lane>     copy the main tree's merged work (other lanes' files) into the lane's worktree as a base, so
 #                                                   its acceptance sees its siblings' code; the lane's own changes are untouched; prints a count
+#   bash crew-worktree.sh <project> rebase <lane>   per-task mode: move the (detached or finished) worktree to the latest origin/<base>
 #   bash crew-worktree.sh <project> remove <lane>   delete the worktree (after merge)
+# Per-task mode (crew-pr.sh mode): `add` cuts the worktree from origin/<base> (never from local uncommitted work), `merge` refuses and
+# `sync` does nothing, because work reaches the base only through its PR (crew-ship.sh task).
 # <project> must be a git repo root. Run `add` for every lane before launching any.
 # ponytail: node_modules/.venv/venv at repo root are symlinked into each worktree so tests can run.
 set -u
@@ -15,13 +18,17 @@ crew="$proj/.devin-crew"; wt="$crew/wt/$lane"
 top=$(git -C "$proj" rev-parse --show-toplevel 2>/dev/null) || { echo "not a git repo: $proj" >&2; exit 1; }
 [ "$top" = "$proj" ] || { echo "project must be the git repo root ($top)" >&2; exit 1; }
 links="node_modules .venv venv"
+pertask=0; bash "$(dirname "$0")/crew-pr.sh" "$proj" mode && pertask=1
+fetch_base() { base=$(bash "$(dirname "$0")/crew-pr.sh" "$proj" base); git -C "$proj" fetch -q origin "$base" || { echo "cannot fetch origin/$base" >&2; exit 1; }; }
 
 case "$cmd" in
   add)
     mkdir -p "$crew/wt" "$crew/lanes"
     grep -qxF '.devin-crew/' "$proj/.git/info/exclude" 2>/dev/null || echo '.devin-crew/' >> "$proj/.git/info/exclude"
     dirty=$(git -C "$proj" status --porcelain | wc -l | tr -d ' ')
-    git -C "$proj" worktree add -q --detach "$wt" HEAD || exit 1
+    start=HEAD
+    if [ "$pertask" = 1 ]; then fetch_base; start="origin/$base"; dirty=0; fi
+    git -C "$proj" worktree add -q --detach "$wt" "$start" || exit 1
     if [ "$dirty" -gt 0 ]; then
       # Later waves must see earlier waves' merged (uncommitted) work: copy the main tree's current state into the
       # worktree and commit it there as a throwaway base (detached, never on a branch), so the lane's diff is lane-only.
@@ -38,6 +45,7 @@ case "$cmd" in
     ;;
   merge)
     [ -d "$wt" ] || { echo "no worktree for $lane" >&2; exit 1; }
+    [ "$pertask" = 0 ] || { echo "per-task mode: work reaches the base through its PR (crew-ship.sh $proj task <id>), not a local merge" >&2; exit 1; }
     # After a file lands in the main tree, commit it in the worktree as the new base, so the lane's next change to it
     # diffs from what main now holds (otherwise its second merge of the same file conflicts with its own first one).
     advance_base() {
@@ -85,6 +93,7 @@ case "$cmd" in
     # The files are committed there as a throwaway base (paths only, detached), so the lane's own diff and its merge stay lane-only.
     # Files the lane changed itself are left alone. Prints the number of files synced.
     [ -d "$wt" ] || { echo "no worktree for $lane" >&2; exit 1; }
+    [ "$pertask" = 0 ] || { echo 0; exit 0; }
     excl=(); for l in $links; do excl+=(":!$l"); done
     excl+=(":(exclude,glob)**/__pycache__/**" ":(exclude,glob)**/*.pyc" ":(exclude,glob)**/.DS_Store")
     git -C "$wt" add -N -- . "${excl[@]}" 2>/dev/null
@@ -105,6 +114,13 @@ case "$cmd" in
       git -C "$wt" add -A -- "${picked[@]}" && git -C "$wt" -c user.name=crew -c user.email=crew@local commit -q --no-verify -m "crew base (sync)" -- "${picked[@]}" || { echo "sync commit failed in $wt" >&2; exit 1; }
     fi
     echo "${#picked[@]}"
+    ;;
+  rebase)
+    [ -d "$wt" ] || { echo "no worktree for $lane" >&2; exit 1; }
+    fetch_base
+    # git itself refuses to overwrite uncommitted changes, so nothing the lane left behind is lost
+    git -C "$wt" checkout -q --detach "origin/$base" || { echo "could not move $wt to origin/$base (uncommitted changes in the way)" >&2; exit 1; }
+    echo "worktree: $wt at origin/$base"
     ;;
   remove)
     git -C "$proj" worktree remove --force "$wt" && rm -f "$crew/lanes/$lane.workdir" && echo "removed $wt"

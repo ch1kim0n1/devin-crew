@@ -20,6 +20,10 @@ Set at the lane's **first launch** only:
 
 A lane commit inside a detached worktree would hide its changes from `crew-worktree.sh merge` and would never reach the repo, so lanes never commit there. You commit in the main tree after `merge` and QA PASS, and push only if the user said to.
 
+## Per-task PR mode
+
+Lanes still run no git. The scripts commit a task's in-scope files in its lane's worktree on a branch of its own, push and open the PR (`reference/github.md`); that needs the user's word for per-task shipping.
+
 ## Cadence (when git is allowed)
 
 Commit at each verified unit of work (a lane task, a milestone after QA PASS); push after each milestone. Never one giant commit at the end, never a commit per tiny edit.

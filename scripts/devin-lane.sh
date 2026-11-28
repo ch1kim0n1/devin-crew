@@ -9,6 +9,11 @@
 #                              CREW_GIT_TARGET="<remote> <branch>"). Shared-tree mode only; default none.
 #      CREW_MAX_SECS=2700      wall-clock cap per turn, nudges included (status failed(timeout))
 #      CREW_STALL_RETRIES=2    automatic kill+nudge attempts when the lane stalls (see crew-observe.sh)
+#      CREW_LANE_UI=tmux|terminal|iterm   run the lane as a visible interactive session (`devin --prompt-file`) in a tmux window or a
+#                              new Terminal / iTerm window (macOS) instead of headless `devin -p`: the user can read along and type.
+#                              The turn ends when the lane posts its DONE line (the session is closed CREW_UI_GRACE=30 s later) or the
+#                              session exits. Lost with it: the stall watchdog and nudges, the log (output stays in the window),
+#                              --export, and so most error classification. The wall-clock cap still applies (raise CREW_MAX_SECS).
 # First call for a lane starts a new Devin session; later calls resume it, unread mail prepended.
 # A lane with .devin-crew/lanes/<lane>.workdir (see crew-worktree.sh) runs inside that git worktree.
 # dangerous = Devin's bypass mode (auto-approves all tools), the user's chosen default for every lane.
@@ -16,6 +21,13 @@ set -u
 dry=0; if [ "${1:-}" = "--print" ]; then dry=1; shift; fi
 proj=$(cd "$1" && pwd -P) || exit 2
 lane=$2; model=$3; task=$4; perm=${5:-dangerous}
+ui=${CREW_LANE_UI:-}
+case "$ui" in
+  ""|headless) ui="";;
+  tmux) command -v tmux >/dev/null 2>&1 || { echo "CREW_LANE_UI=tmux but tmux is not installed" >&2; exit 2; };;
+  terminal|iterm) command -v osascript >/dev/null 2>&1 || { echo "CREW_LANE_UI=$ui needs macOS (osascript); use tmux elsewhere" >&2; exit 2; };;
+  *) echo "unknown CREW_LANE_UI '$ui' (tmux, terminal, iterm or headless)" >&2; exit 2;;
+esac
 crew="$proj/.devin-crew"
 [ "$dry" -eq 1 ] || mkdir -p "$crew/lanes" "$crew/logs"
 sid_file="$crew/lanes/$lane.sid"; model_file="$crew/lanes/$lane.model"
@@ -118,12 +130,14 @@ if [ "$dry" -eq 1 ]; then
   echo "=== DRY RUN: nothing launched, nothing changed ==="
   echo "lane: $lane | $mode | model: $model | permission mode: $perm | role: ${CREW_ROLE:-none} | git rights: $gitmode${target:+ ($target)}"
   echo "runs in: $workdir | wall-clock cap per turn: ${CREW_MAX_SECS:-2700}s | stall retries: ${CREW_STALL_RETRIES:-2}"
-  echo "command: devin -p <prompt below> --model $model --permission-mode $perm --export $crew/lanes/$lane.export.json ${resume[*]:-}"
+  if [ -n "$ui" ]; then echo "command (in a new $ui window): devin --prompt-file <prompt below> --model $model --permission-mode $perm ${resume[*]:-}"
+  else echo "command: devin -p <prompt below> --model $model --permission-mode $perm --export $crew/lanes/$lane.export.json ${resume[*]:-}"; fi
   echo "=== PROMPT (exactly what the lane receives) ==="
   printf '%s\n' "$prompt"
   exit 0
 fi
 echo $$ > "$crew/lanes/$lane.pid"; date +%s > "$crew/lanes/$lane.started"
+[ -n "$ui" ] || rm -f "$crew/lanes/$lane.ui.sh"
 echo running > "$crew/lanes/$lane.status"
 # Only the task this brief belongs to changes state (a lane can own several tasks; the others have not run). A brief that is
 # not a task id (a fix or review brief) only revives tasks that already ran: failed or in review, never open ones.
@@ -173,7 +187,52 @@ run_turn() {
   rm -f "$crew/lanes/$lane.devinpid"
 }
 
-run_turn "$prompt" ${resume[@]+"${resume[@]}"}
+done_lines() { local n; n=$(grep -cE "^[^[]*DONE $lane( |:|\()" "$crew/BOARD.md" 2>/dev/null); echo "${n:-0}"; }   # 0 before BOARD.md exists; mail lines start with "[", skip them
+kill_pid() { pkill -TERM -P "$1" 2>/dev/null; kill -TERM "$1" 2>/dev/null; sleep 2; pkill -KILL -P "$1" 2>/dev/null; kill -KILL "$1" 2>/dev/null; }
+open_window() { # command line -> a new window the user can watch and type into
+  case "$ui" in
+    tmux)
+      if [ -n "${TMUX:-}" ]; then tmux new-window -d -n "$lane" "$1"
+      else   # one session "crew", a window per lane; the last try covers two lanes creating the session at once
+        tmux new-window -d -t "=crew:" -n "$lane" "$1" 2>/dev/null || tmux new-session -d -s crew -n "$lane" "$1" 2>/dev/null || tmux new-window -d -t "=crew:" -n "$lane" "$1"
+      fi;;
+    terminal) osascript -e 'on run argv' -e 'tell application "Terminal" to do script (item 1 of argv)' -e 'end run' "$1" >/dev/null;;
+    iterm) osascript -e 'on run argv' -e 'tell application "iTerm"' -e 'set w to (create window with default profile)' \
+             -e 'tell current session of w to write text (item 1 of argv)' -e 'end tell' -e 'end run' "$1" >/dev/null;;
+  esac
+}
+# run_ui <prompt> [devin args...]: one interactive turn. Sets code and timedout like run_turn.
+run_ui() {
+  local p=$1; shift
+  local pf="$crew/lanes/$lane.prompt.md" run="$crew/lanes/$lane.ui.sh" pidf="$crew/lanes/$lane.devinpid" xf="$crew/lanes/$lane.ui.exit"
+  local before now dpid="" doneat="" grace=${CREW_UI_GRACE:-30}
+  stall_reason=""; timedout=0; code=1; start=$(date +%s); before=$(done_lines)
+  printf '%s\n' "$p" > "$pf"; rm -f "${pidf:?}" "${xf:?}" "$crew/lanes/$lane.export.json"   # a stale export would name the wrong session
+  { echo '#!/usr/bin/env bash'
+    printf 'cd %q || exit 2\n' "$workdir"
+    # the inner shell records its pid and becomes devin, which stays in the window's foreground and keeps the keyboard
+    printf "bash -c 'echo \$\$ > \"\$0\"; exec \"\$@\"' %q" "$pidf"
+    printf ' %q' "$(command -v devin)" --prompt-file "$pf" --model "$model" --permission-mode "$perm" "$@"
+    printf '\necho $? > %q\n' "$xf"; } > "$run"
+  echo "interactive lane (CREW_LANE_UI=$ui): its output is in the window, not in this log" >> "$log"
+  open_window "bash $(printf '%q' "$run")" >>"$log" 2>&1 || { echo "error: could not open a $ui window" | tee -a "$log" >&2; return; }
+  while [ ! -f "$xf" ]; do
+    sleep 1; now=$(date +%s); dpid=$(cat "$pidf" 2>/dev/null)
+    if [ -z "$dpid" ]; then
+      [ $((now - start)) -lt "${CREW_UI_START_SECS:-60}" ] && continue
+      echo "error: devin never started in the $ui window" | tee -a "$log" >&2; return
+    fi
+    kill -0 "$dpid" 2>/dev/null || { sleep 2; break; }   # window closed
+    if [ -z "$doneat" ] && [ "$(done_lines)" -gt "$before" ]; then doneat=$now; ev "DONE line posted; closing the session in ${grace}s"; fi
+    if [ -n "$doneat" ] && [ $((now - doneat)) -ge "$grace" ]; then kill_pid "$dpid"; break; fi
+    if [ $((now - start)) -ge "$max" ]; then timedout=1; ev "TIMEOUT after ${max}s, killing"; kill_pid "$dpid"; break; fi
+  done
+  if [ "$(done_lines)" -gt "$before" ]; then code=0; else code=$(cat "$xf" 2>/dev/null); code=${code:-1}; fi
+  rm -f "${pidf:?}"
+}
+
+if [ -n "$ui" ]; then run_ui "$prompt" ${resume[@]+"${resume[@]}"}
+else run_turn "$prompt" ${resume[@]+"${resume[@]}"}; fi
 attempt=0
 while [ -n "$stall_reason" ] && [ "$timedout" -eq 0 ] && [ "$attempt" -lt "$retries" ]; do
   attempt=$((attempt + 1))

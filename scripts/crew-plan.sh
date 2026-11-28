@@ -2,10 +2,10 @@
 # From a vague goal to a running crew, with a read-only architect Devin doing the thinking and writing, so the brain only reviews and decides.
 #   bash crew-plan.sh <project> draft "<goal>" [--answers "<text>"] [--print]   launch the architect Devin (lane plan, read-only, role architect); it writes .devin-crew/draft/*
 #   bash crew-plan.sh <project> check                                           validate the draft; prints a short summary and the questions (exit 1 on problems)
-#   bash crew-plan.sh <project> apply [--ship] [--budget <minutes>]             move the draft into place (PLAN.md, scopes, contracts, roster, briefs, milestones)
+#   bash crew-plan.sh <project> apply [--ship|--ship-per-task] [--budget <minutes>]   move the draft into place (PLAN.md, scopes, contracts, roster, briefs, milestones)
 #   bash crew-plan.sh <project> go [--ship] [--budget <minutes>]                apply + crew-init (preflight, lock, baseline, isolation) + autopilot --detach
 # The draft is read-only recon output: no worker is launched and nothing in the project changes before `go`. `--ship` writes `ship: yes` into PLAN.md
-# (the user's word that the crew may push a branch and open a PR). Draft files, all under .devin-crew/draft/:
+# (the user's word that the crew may push a branch and open a PR); `--ship-per-task` writes `ship: per-task` (one branch and PR per task). Draft files, all under .devin-crew/draft/:
 #   RECON.md  QUESTIONS.md (at most 3 `Q: ... | default: ...` lines, or NONE)  PLAN.md  SPEC.md  CONTRACTS.md  ROSTER.md  scopes.txt  baseline.cmd
 #   milestones/m<N>.tasks (a first line `# name`, then TASKS rows)  prompts/<task-id>.md (+ optional <task-id>.role)
 set -u
@@ -36,6 +36,8 @@ Update the draft accordingly (QUESTIONS.md becomes NONE unless something new is 
 8. baseline.cmd: one line, the project's test/build command that should pass before work starts (or an honest \`true\` if none exists and the first task creates one).
 9. milestones/m1.tasks, m2.tasks, ...: each milestone is verifiable on its own; first line \`# <milestone name>\`, then one row per task in the exact format \`| id | lane | scope | depends | acceptance | status |\` with status \`open\`, ids unique across milestones (t1, t2, ...), depends = \`-\` or ids, acceptance = ONE command that fails when the work is wrong (no pipes inside it; put longer checks in a script file the task creates).
 10. prompts/<task-id>.md: one self-contained brief per task (goal, owned files, contracts to honor, the exact verify command, definition of done, what sibling lanes do at the same time). Optionally prompts/<task-id>.role holding one role name; if absent the role is picked from the task's files.
+GitHub issues: when a task resolves one, put a line \`issue: <n>\` in its brief (used by per-task PRs: \`Closes #<n>\`); a task that must wait
+for an issue outside this plan to close lists \`#<n>\` in depends.
 Roles you can assign (templates/roles/):
 $roles
 Rules: pair risky or contract-heavy work with a \`tests\` lane that writes tests from CONTRACTS.md in parallel (test-first); a \`tests\` task's depends lists the task(s) whose code its acceptance command runs (otherwise it is checked red before that code merges); never more lanes than independent file clusters; every task is small enough for one Devin turn of 5-45 minutes; the last milestone includes docs for what was built. You never edit project files.
@@ -44,6 +46,7 @@ BRIEF
     # Devin refuses untrusted workspaces and this skill never bypasses that: find out now, once, before the architect is launched
     if [ ! -f "$crew/trusted" ]; then
       d=$(bash "$here/crew-doctor.sh" "$proj" --trust 2>&1); rc=$?
+      printf '%s\n' "$d" | grep -E '^WARN branch is [0-9]+ commit'
       if [ "$rc" -ne 0 ]; then printf '%s\n' "$d" | grep -E '^(FAIL|WARN)' | head -6; echo "PLAN STOP: preflight failed (fix above, e.g. run 'devin' once in $proj and accept the workspace trust); nothing was started"; exit 1; fi
       : > "$crew/trusted"
     fi
@@ -86,7 +89,7 @@ BRIEF
         n=split(dependencies[id], deps, /[ ,]+/)
         for (i=1; i<=n; i++) {
           dep=deps[i]
-          if (dep=="" || dep=="-") continue
+          if (dep=="" || dep=="-" || dep ~ /^#[0-9]+$/) continue
           if (!(dep in milestone)) print id " depends on unknown task " dep
           else if (milestone[dep] > milestone[id]) print id " depends on later milestone task " dep
           else if (state[dep]==1) print "dependency cycle: " id " depends on " dep
@@ -108,14 +111,14 @@ BRIEF
     exit "$bad";;
   apply|go)
     ship=0; budget=600
-    while [ $# -gt 0 ]; do case "$1" in --ship) ship=1; shift;; --budget) budget=$2; shift 2;; *) shift;; esac; done
+    while [ $# -gt 0 ]; do case "$1" in --ship) ship=yes; shift;; --ship-per-task) ship=per-task; shift;; --budget) budget=$2; shift 2;; *) shift;; esac; done
     c=$(bash "$0" "$proj" check) || { printf '%s\n' "$c"; echo "PLAN STOP: fix the problems above (re-draft with --answers, or edit the draft files), then rerun"; exit 1; }
     mkdir -p "$crew/prompts" "$crew/milestones"
     cp "$dr/PLAN.md" "$crew/PLAN.md"; cp "$dr/SPEC.md" "$crew/SPEC.md"; cp "$dr/CONTRACTS.md" "$crew/CONTRACTS.md"; cp "$dr/ROSTER.md" "$crew/ROSTER.md"; cp "$dr/scopes.txt" "$crew/scopes.txt"; [ -n "$(tail -c1 "$crew/scopes.txt")" ] && echo >> "$crew/scopes.txt"  # a missing final newline hides the last scope from `read` loops
     cp "$dr/baseline.cmd" "$crew/baseline.cmd.draft"; cp "$dr"/prompts/* "$crew/prompts/" 2>/dev/null; cp "$dr"/milestones/m*.tasks "$crew/milestones/"
     printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n' > "$crew/TASKS.md"
     [ -f "$crew/BOARD.md" ] || : > "$crew/BOARD.md"
-    { echo "approved: $(date +%F)"; [ "$ship" = 1 ] && echo "ship: yes"; echo "autonomy: auto"; echo "budget_minutes: $budget"; } >> "$crew/PLAN.md"
+    { echo "approved: $(date +%F)"; [ "$ship" != 0 ] && echo "ship: $ship"; echo "autonomy: auto"; echo "budget_minutes: $budget"; } >> "$crew/PLAN.md"
     bash "$here/crew-budget.sh" "$proj" set "$budget" >/dev/null 2>&1
     echo "PLAN APPLIED: $(echo "$c" | head -1)"
     if [ "$mode" = go ]; then

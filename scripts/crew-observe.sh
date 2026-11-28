@@ -32,7 +32,12 @@ lane_sid() { # lane -> session id (saved, else newest session in the lane's work
     wd=$proj; [ -f "$crew/lanes/$lane.workdir" ] && wd=$(cat "$crew/lanes/$lane.workdir")
     # only sessions created after this lane started: a manager session (Claude, Codex or another Devin) in the same folder is older and must never be mistaken for the lane's
     local since=0; [ -f "$crew/lanes/$lane.started" ] && since=$(( $(cat "$crew/lanes/$lane.started") - 5 ))
-    sid=$(q "select id from sessions where working_directory='$(esc "$wd")' and created_at >= $since order by created_at desc limit 1")
+    # lanes sharing one folder (no export file in interactive mode): the session that received this lane's preamble is the lane's
+    sid=$(q "select s.id from sessions s where s.working_directory='$(esc "$wd")' and s.created_at >= $since and exists (select 1 from message_nodes m where m.session_id=s.id and instr(json_extract(m.chat_message,'\$.content'), 'You are lane \"$(esc "$lane")\"')>0) order by s.created_at desc limit 1")
+    # an interactive lane in the shared tree has no safe fallback: the newest session there may be a sibling's
+    if [ -z "$sid" ] && { [ "$wd" != "$proj" ] || [ ! -f "$crew/lanes/$lane.ui.sh" ]; }; then
+      sid=$(q "select id from sessions where working_directory='$(esc "$wd")' and created_at >= $since order by created_at desc limit 1")
+    fi
   fi
   echo "$sid"
 }

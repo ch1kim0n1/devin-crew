@@ -3,6 +3,15 @@
 echo "$*" >> "${STUB_OUT:-/tmp}/gh.log"
 case "${1:-} ${2:-}" in
   "auth status") [ "${STUB_GH_AUTH:-in}" = in ] && exit 0 || { echo "not logged in"; exit 1; };;
-  "pr create") echo "https://github.com/stub/repo/pull/7"; exit 0;;
+  "pr create") [ "${STUB_GH_CREATE:-ok}" = ok ] || { echo "GraphQL: stub refused"; exit 1; }
+    c=$(( $(cat "${STUB_OUT:-/tmp}/prcount" 2>/dev/null || echo 6) + 1 )); echo "$c" > "${STUB_OUT:-/tmp}/prcount"; echo "https://github.com/stub/repo/pull/$c"; exit 0;;
+  # PR and issue state come from files the test writes: $STUB_OUT/gh/pr-<n>.json, issue-<n>.json, prlist.json
+  "pr view") n=${3##*/}; cat "${STUB_OUT:-/tmp}/gh/pr-$n.json" 2>/dev/null || echo '{"state":"OPEN","comments":[]}'; exit 0;;
+  "pr comment") n=${3##*/}; f="${STUB_OUT:-/tmp}/gh/pr-$n.json"; mkdir -p "${f%/*}"
+    python3 -I -c 'import json,os,sys
+f,b=sys.argv[1:]; d=json.load(open(f)) if os.path.exists(f) else {"state":"OPEN","comments":[]}
+d["comments"].append({"body":b,"viewerDidAuthor":True}); json.dump(d,open(f,"w"))' "$f" "$5"; exit 0;;
+  "pr list") cat "${STUB_OUT:-/tmp}/gh/prlist.json" 2>/dev/null || echo '[]'; exit 0;;
+  "issue view") cat "${STUB_OUT:-/tmp}/gh/issue-$3.json" 2>/dev/null || echo '{"state":"OPEN"}'; exit 0;;
 esac
 exit 0

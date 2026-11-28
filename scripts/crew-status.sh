@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-screen view of a crew run: tasks, lanes, mail, lock. Safe to run any time, changes nothing.
 #   bash crew-status.sh <project>
-# TASKS.md rows end in a status cell: open | running | review | done | failed.
+# TASKS.md rows end in a status cell: open | running | review | pr | done | failed.
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
 crew="$proj/.devin-crew"
@@ -10,7 +10,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 count() { grep -ciE "\|[[:space:]]*$1[[:space:]]*\|?[[:space:]]*$" "$crew/TASKS.md" 2>/dev/null || true; }
 if [ -f "$crew/TASKS.md" ]; then
-  echo "tasks: open=$(count open) running=$(count running) review=$(count review) done=$(count "done") failed=$(count failed)"
+  prs=$(count pr); [ "${prs:-0}" -gt 0 ] && prs=" pr=$prs" || prs=""
+  echo "tasks: open=$(count open) running=$(count running) review=$(count review) done=$(count "done") failed=$(count failed)$prs"
 else echo "tasks: no TASKS.md"; fi
 [ -f "$crew/LOCK" ] && echo "lock: held $(( $(date +%s) - $(head -1 "$crew/LOCK") ))s ago"
 [ -f "$crew/baseline.cmd" ] && echo "baseline: exit $(cat "$crew/baseline.exit") for: $(cat "$crew/baseline.cmd")"

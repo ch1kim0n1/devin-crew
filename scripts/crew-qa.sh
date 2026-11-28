@@ -5,13 +5,15 @@
 # Git repo: diff of the working tree vs HEAD plus untracked files. Otherwise: diff vs .devin-crew/snapshot.tgz.
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
+here_qa=$(cd "$(dirname "$0")" && pwd)/crew-qa.sh   # resolved before cd: $0 may be relative
 cd "$proj" || exit 2
 crew="$proj/.devin-crew"
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 
 # ---- 1. one unified diff, zero context
 if git rev-parse --show-toplevel >/dev/null 2>&1 && [ "$(git rev-parse --show-toplevel)" = "$proj" ]; then
-  { git diff HEAD -U0 --no-color --src-prefix=a/ --dst-prefix=b/ -- . ':!.devin-crew'
+  from=$(bash "$(dirname "$here_qa")/crew-pr.sh" "$proj" diffbase)
+  { git diff "$from" -U0 --no-color --src-prefix=a/ --dst-prefix=b/ -- . ':!.devin-crew'
     git ls-files -o --exclude-standard -z | while IFS= read -r -d '' f; do
       case "$f" in .devin-crew/*) continue ;; esac
       git diff --no-index -U0 --no-color --src-prefix=a/ --dst-prefix=b/ /dev/null "$f"
