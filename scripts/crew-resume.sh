@@ -47,10 +47,12 @@ if [ -f "$crew/TASKS.md" ]; then
   cnt() { grep -ciE "\|[[:space:]]*$1[[:space:]]*\|?[[:space:]]*$" "$crew/TASKS.md" 2>/dev/null || true; }
   rv=$(cnt review); fl=$(cnt failed); op=$(cnt open); rn=$(cnt running); dn=$(cnt "done")
   [ "${rv:-0}" -gt 0 ] && say "$rv task(s) in review: bash $here/crew-verify.sh $proj (runs acceptance, checks contract versions, marks done/failed)."
+  pw=$(cnt pr)
+  [ "${pw:-0}" -gt 0 ] && say "$pw task(s) with an open PR: review or merge them, then bash $here/crew-conduct.sh $proj (it picks up merges and [manager] comments)."
   [ "${fl:-0}" -gt 0 ] && say "$fl failed task(s): diagnose, then send the lane a correction (resume it) or reassign. Three failures of one task means ask the user."
   nx=$(bash "$here/crew-tasks.sh" "$proj" next)
   [ -n "$nx" ] && say "Launchable now (deps done, lane idle):$(echo "$nx" | awk '{printf " %s(%s)", $1, $2}'). Brief them per SKILL.md phase 4 (respect the plan's git rights and budget)."
-  if [ "${op:-0}" -eq 0 ] && [ "${rn:-0}" -eq 0 ] && [ "${rv:-0}" -eq 0 ] && [ "${fl:-0}" -eq 0 ] && [ "${dn:-0}" -gt 0 ] && [ "$running" -eq 0 ]; then
+  if [ "${op:-0}" -eq 0 ] && [ "${rn:-0}" -eq 0 ] && [ "${rv:-0}" -eq 0 ] && [ "${fl:-0}" -eq 0 ] && [ "${pw:-0}" -eq 0 ] && [ "${dn:-0}" -gt 0 ] && [ "$running" -eq 0 ]; then
     verdict=$(grep -oE 'verdict: (PASS WITH NOTES|PASS|FAIL)' "$crew/QA.md" 2>/dev/null | tail -1 | sed 's/verdict: //')
     case "$verdict" in
       PASS|"PASS WITH NOTES") say "All tasks done and the latest QA verdict is $verdict. If every milestone in PLAN.md has a verdict: finish (crew-worktree.sh remove each lane, crew-guard.sh unlock) and report once, quoting the verdict and any notes. Otherwise plan and start the next milestone.";;

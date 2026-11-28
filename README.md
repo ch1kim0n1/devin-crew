@@ -160,6 +160,13 @@ Shortcuts like `status`, `resume`, `stats` still work, but nothing requires them
 
 Dry run any launch with `bash scripts/devin-lane.sh --print <project> <lane> - <task_file>`: it prints the exact prompt, rights and command and starts nothing.
 
+### One PR per issue, and lanes you can watch
+
+- *"Open one pull request per issue"*: each task gets its own branch (`issue-<n>-<slug>`) and PR with `Closes #<n>`. Comment `[manager] <change>` on a PR and the lane fixes it; dependent tasks start after the merge.
+- *"I want to watch the Devins"*: set `CREW_LANE_UI=tmux` (or `terminal` / `iterm` on macOS) to run lanes as interactive sessions you can read and type into. You lose the stall watchdog and lane logs.
+
+Details and limits: [reference/github.md](reference/github.md).
+
 ## Safety (read this first)
 
 Lanes run Devin in **bypass mode** (`--permission-mode dangerous`): nothing asks permission before a lane runs a command or edits a file. Guardrails (file scopes, worktrees, snapshots, scope checks, no git writes by default) limit the damage; they are **not a sandbox**.

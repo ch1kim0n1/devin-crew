@@ -13,6 +13,7 @@
 # per milestone, stopping if the same failure comes back. Anything else (NEEDS-USER, BRAIN, ORCHESTRATOR-MAIL, BUDGET, STUCK) stops the
 # autopilot, writes .devin-crew/autopilot/ATTENTION with the digest and sends a desktop notification; fix it, then run --detach again
 # (the state is in files, so it continues where it stopped).
+# Per-task shipping (`ship: per-task`): the conductor opens one PR per task; PR-WAIT stops me (ATTENTION) until a PR is reviewed or merged.
 # env: CREW_QA_ROUNDS=3 | CREW_AUTOPILOT_MAX_SECS=21600 | CREW_SHIP_OK=1 or `ship: yes` in PLAN.md authorizes branch + PR (without it the run ends at REPORT.md)
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
@@ -43,7 +44,8 @@ esac
 trim() { local x=$1; x=${x#"${x%%[![:space:]]*}"}; echo "${x%"${x##*[![:space:]]}"}"; }
 notify() { bash "$here/crew-notify.sh" "devin-crew: $*" >/dev/null 2>&1; }
 attention() { { echo "$1"; cat "$ap/last.digest" 2>/dev/null; } > "$ap/ATTENTION"; log "ATTENTION: $1"; notify "$1"; echo "ATTENTION: $1"; exit 0; }
-authorized() { [ "${CREW_SHIP_OK:-0}" = 1 ] || grep -qiE '^ship: *yes' "$crew/PLAN.md" 2>/dev/null; }
+authorized() { [ "${CREW_SHIP_OK:-0}" = 1 ] || grep -qiE '^ship: *(yes|per-task)' "$crew/PLAN.md" 2>/dev/null; }
+per_task() { bash "$here/crew-pr.sh" "$proj" mode; }
 git_root() { [ "$(git -C "$proj" rev-parse --show-toplevel 2>/dev/null)" = "$proj" ]; }
 refresh_lane_on_launch() { # the conductor prepares the worktree before launching the lane
   local l=$1 st; st=$(cat "$crew/lanes/$l.status" 2>/dev/null || echo none)
@@ -98,12 +100,13 @@ while :; do
   case "$reason" in
     TIMEOUT*) continue;;
     MILESTONE-READY*)
-      if authorized; then c=$(bash "$here/crew-ship.sh" "$proj" commit "$(cat "$crew/MILESTONE" 2>/dev/null || echo milestone)" 2>&1 | tail -1); log "commit: $c"; fi
+      if authorized && ! per_task; then c=$(bash "$here/crew-ship.sh" "$proj" commit "$(cat "$crew/MILESTONE" 2>/dev/null || echo milestone)" 2>&1 | tail -1); log "commit: $c"; fi
       if load_next_ms >/dev/null; then continue; fi
       if [ "$nms" -gt 1 ] && [ "$(get final no)" = no ]; then   # one more QA over the whole objective
         echo yes > "$ap/final"; echo "FINAL: whole objective, all milestones together" > "$crew/MILESTONE"; rm -f "$crew/conduct/qa.state"; log "final whole-objective QA"; continue; fi
       bash "$here/crew-conduct.sh" "$proj" --report > "$ap/report.out" 2>&1; log "report: $(head -1 "$ap/report.out")"
-      if authorized; then s=$(bash "$here/crew-ship.sh" "$proj" all 2>&1 | tail -1); log "ship: $s"; else s="not authorized to push: branch/PR skipped (REPORT.md is ready)"; fi
+      if per_task; then s="per-task PRs, all merged: $(cat "$crew"/pr/*.url 2>/dev/null | tr '\n' ' ')"; log "ship: $s"
+      elif authorized; then s=$(bash "$here/crew-ship.sh" "$proj" all 2>&1 | tail -1); log "ship: $s"; else s="not authorized to push: branch/PR skipped (REPORT.md is ready)"; fi
       { echo "DONE $(date '+%F %T')"; echo "$s"; head -20 "$crew/REPORT.md" 2>/dev/null; } > "$ap/DONE"; notify "run finished. $s"; echo "DONE: $s"; exit 0;;
     QA-FAIL*)
       r=$(get rounds 0); [ "$r" -ge "$maxrounds" ] && attention "QA still failing after $maxrounds fix rounds (milestone $(get current 1))"

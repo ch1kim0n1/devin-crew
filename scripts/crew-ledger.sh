@@ -31,7 +31,7 @@ case "$kind" in
     td=0; tt=0
     if [ -f "$proj/.devin-crew/TASKS.md" ]; then
       td=$(grep -Ec '^\|.*\| *done *\|? *$' "$proj/.devin-crew/TASKS.md")
-      tt=$(grep -Ec '^\|.*\| *(open|running|review|done|failed) *\|? *$' "$proj/.devin-crew/TASKS.md")
+      tt=$(grep -Ec '^\|.*\| *(open|running|review|pr|done|failed) *\|? *$' "$proj/.devin-crew/TASKS.md")
     fi
     printf 'turn\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$proj" "$lane" "$status" "$el" "$nud" "$res" "$cls" \
       "${peak:-0}" "${in:-0}" "${out:-0}" "${tools:-0}" "${msgs:-0}" "${acu:-0}" "$td" "$tt" >> "$L";;

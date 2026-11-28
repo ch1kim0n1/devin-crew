@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Preflight: can a crew run here? Changes nothing (except with --trust, which runs one tiny Devin turn and deletes its own session).
+# Preflight: can a crew run here? Changes nothing, except `git fetch` (remote-tracking refs only; CREW_DOCTOR_FETCH=0 skips it)
+# and --trust, which runs one tiny Devin turn and deletes its own session.
 #   bash crew-doctor.sh <project> [--trust]
 # Prints OK / WARN / FAIL lines, each FAIL/WARN with the fix. Exit 1 if any FAIL.
 set -u
@@ -48,6 +49,26 @@ if top=$(git -C "$proj" rev-parse --show-toplevel 2>/dev/null); then
     n=$(git -C "$proj" status --porcelain | wc -l | tr -d ' ')
     ok "git repo root, branch $(git -C "$proj" rev-parse --abbrev-ref HEAD 2>/dev/null), $n uncommitted file(s) -> worktree mode available"
     [ "$n" -gt 0 ] && warn "uncommitted work exists -> lanes start from it (worktrees copy it as their base); commit or stash first if unsure"
+    # lanes start from HEAD: commits that exist only on the remote would be missed, and all their work would conflict later
+    cur=$(git -C "$proj" symbolic-ref --short -q HEAD)
+    up=""; uprem=""
+    [ -n "$cur" ] && { up=$(git -C "$proj" for-each-ref --format='%(upstream:short)' "refs/heads/$cur"); uprem=$(git -C "$proj" config "branch.$cur.remote"); }
+    if [ "${CREW_DOCTOR_FETCH:-1}" != 0 ]; then
+      for r in $(printf '%s\n' origin $uprem | sort -u); do
+        git -C "$proj" remote get-url "$r" >/dev/null 2>&1 || continue
+        (  # never stop for a password: an agent shell has nobody to type it
+          export GIT_TERMINAL_PROMPT=0
+          [ -n "${GIT_SSH_COMMAND:-}${GIT_SSH:-}$(git -C "$proj" config core.sshCommand)" ] || export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=10"
+          git -C "$proj" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15 fetch --quiet "$r" </dev/null >/dev/null 2>&1
+        ) || warn "git fetch $r failed -> the behind check uses the last fetched state"
+      done
+    fi
+    def=$(git -C "$proj" symbolic-ref --short -q refs/remotes/origin/HEAD)
+    [ -n "$def" ] || for b in main master; do git -C "$proj" show-ref --verify -q "refs/remotes/origin/$b" && { def=origin/$b; break; }; done
+    for ref in $(printf '%s\n' $up $def | awk '!seen[$0]++'); do
+      behind=$(git -C "$proj" rev-list --count "HEAD..$ref" 2>/dev/null)
+      [ "${behind:-0}" -gt 0 ] && warn "branch is $behind commit(s) behind $ref -> lanes would start from a stale base; pull or switch first"
+    done
   else warn "inside a git repo but not its root ($top) -> worktree mode needs the root; use a shared tree + snapshot, or run from the root"; fi
 else warn "not a git repo -> shared tree: lanes edit in place, only the snapshot protects you"; fi
 
@@ -66,7 +87,7 @@ elif [ ! -d "$sk/.git" ] && [ ! -L "$(dirname "$sk")/$(basename "$sk")" ]; then 
 else ok "skill install has the conductor, collect, review, audit and init scripts"; fi
 
 # shipping a PR needs gh; only a note, since the crew works without it
-if grep -qiE '^ship: *yes' "$crew/PLAN.md" 2>/dev/null || [ "${CREW_SHIP_OK:-0}" = 1 ]; then
+if grep -qiE '^ship: *(yes|per-task)' "$crew/PLAN.md" 2>/dev/null || [ "${CREW_SHIP_OK:-0}" = 1 ]; then
   if ! command -v gh >/dev/null 2>&1; then warn "shipping is authorized but gh is not installed -> install it (brew install gh), the run would end without a PR"
   elif ! gh auth status >/dev/null 2>&1; then warn "shipping is authorized but gh is not logged in -> gh auth login (never done by this skill)"
   elif ! git -C "$proj" remote get-url origin >/dev/null 2>&1; then warn "shipping is authorized but the repo has no 'origin' remote -> add one"

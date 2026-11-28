@@ -9,6 +9,7 @@ set -u
 proj=$(cd "$1" && pwd -P) || exit 2
 id=${2:?task id}; here="$(cd "$(dirname "$0")" && pwd)"; crew="$proj/.devin-crew"
 [ "$(git -C "$proj" rev-parse --show-toplevel 2>/dev/null)" = "$proj" ] || { echo "RACE STOP: needs worktree mode (a git repo root)"; exit 1; }
+bash "$here/crew-pr.sh" "$proj" mode && { echo "RACE STOP: not available with per-task PRs (the losing task would count as done before the winner's PR merges)"; exit 1; }
 row=$(awk -F'|' -v id="$id" 'function t(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x} NF>=7 && t($2)==id {print; exit}' "$crew/TASKS.md")
 [ -n "$row" ] || { echo "RACE STOP: no task $id in TASKS.md"; exit 1; }
 IFS='|' read -r _ _ lane scope dep acc _ <<< "$row"; lane=$(echo $lane); alt="$lane-alt"

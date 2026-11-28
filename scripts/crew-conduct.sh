@@ -16,11 +16,15 @@
 #   CONDUCT ORCHESTRATOR-MAIL <n>      a lane mailed you
 #   CONDUCT BUDGET                     lane-minute budget exceeded
 #   CONDUCT STUCK <ids>                open tasks cannot launch (no brief, or dependencies not done)
+#   CONDUCT PR-WAIT <n>                per-task mode (or `#<n>` dependencies): only open PRs / issues remain. Review each PR (comment
+#                                      `[manager] ...` or merge it), then run me again; I resume the lane on a [manager] comment
 #   CONDUCT TIMEOUT
+# Per-task mode (crew-pr.sh mode): a clean lane is shipped (crew-ship.sh task) instead of merged; its next task waits until that PR merges,
+# starts from the updated base, and dependents wait for the merge too.
 # A digest that is the Nth wake of this run (CREW_FRESH_AFTER, default 12) also prints FRESH-SESSION: the brain's context is the cost, so
 # finish the decision, keep PLAN.md current and continue in a new session (/devin-crew resume).
 #   bash crew-conduct.sh <project> --report        launch the reporter Devin, wait for it, print the head of .devin-crew/REPORT.md
-# env: CREW_AUTOFIX=2 fix rounds per lane | CREW_AUTOREVIEW=1 (0 off) | CREW_REVIEW_PASSES=2 | CREW_MERGE=1 (worktree lanes) |
+# env: CREW_PR_POLL=60 seconds between GitHub checks | CREW_PR_ROUNDS=5 review rounds per task | CREW_AUTOFIX=2 fix rounds per lane | CREW_AUTOREVIEW=1 (0 off) | CREW_REVIEW_PASSES=2 | CREW_MERGE=1 (worktree lanes) |
 #      CREW_AUTOQA=1 (0 off: the brain runs QA itself, expensive) | CREW_FRESH_AFTER=12 | CREW_CONDUCT_MAX_LANES=5 | CREW_CONDUCT_POLL=10 | CREW_CONDUCT_MAX_SECS=7200
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
@@ -90,7 +94,16 @@ merge_lane() { # best-of-2 lanes wait for their twin; everything else merges at 
   do_merge_lane "$lane"
 }
 do_merge_lane() {
-  local lane=$1 m rc
+  local lane=$1 m rc tid
+  if [ "$pertask" = 1 ]; then   # never the local merge: it would mark the task done with no PR (CREW_MERGE=0 leaves it in review)
+    tid=""; [ "$domerge" = 1 ] && tid=$(bash "$here/crew-tasks.sh" "$proj" with review "$lane" | awk 'NR==1{print $1}')
+    if [ -n "$tid" ]; then
+      m=$(bash "$here/crew-ship.sh" "$proj" task "$tid" 2>&1); rc=$?
+      if [ "$rc" -ne 0 ]; then setst "$lane" brain "ship problem"; { echo "could not open the PR for $tid"; printf '%s\n' "$m" | tail -10; } > "$cd_dir/$lane.brain"; return 1; fi
+      ev "$lane shipped $tid: $(printf '%s' "$m" | tail -1)"; pr_next=0   # look at GitHub again before deciding anything
+    fi
+    setst "$lane" merged; return 0
+  fi
   if [ "$domerge" = 1 ] && [ -f "$crew/lanes/$lane.workdir" ]; then
     m=$(bash "$here/crew-worktree.sh" "$proj" merge "$lane" 2>&1); rc=$?
     if [ "$rc" -ne 0 ] || printf '%s' "$m" | grep -q 'NOT merged (outside its scope)'; then setst "$lane" brain "merge problem"; printf '%s\n' "$m" | head -12 > "$cd_dir/$lane.brain"; return 1; fi
@@ -136,6 +149,33 @@ qa_gate() { # all tasks done: have a QA Devin verify the milestone. Returns 0 = 
        echo running > "$cd_dir/qa.state"; bash "$here/crew-audit.sh" "$proj" qa >/dev/null 2>&1; ev "qa launched: $(cat "$crew/qa/lane" 2>/dev/null)"; return 1;;
   esac
 }
+review_round() { # <task> <lane> <url>: a [manager] comment is newer than the lane's reply -> resume the lane with it
+  local tid=$1 lane=$2 url=$3 n f
+  case "$(st_of "$lane")" in launched|reviewing|waiting|brain) return 0;; esac
+  alive "$lane" && return 0
+  n=$(( $(num "$tid" round) + 1 ))
+  if [ "$n" -gt "${CREW_PR_ROUNDS:-5}" ]; then setst "$lane" brain "review rounds exhausted"; printf 'review rounds exhausted (%s) for %s: %s\n' "${CREW_PR_ROUNDS:-5}" "$tid" "$url" > "$cd_dir/$lane.brain"; return 1; fi
+  inc "$tid" round; f="$crew/prompts/$tid-review-$n.md"
+  { printf 'A reviewer asked for changes on your open pull request %s (task %s). Address every point below, change only files in your scope, re-run your acceptance command (%s), and post a new DONE line. Do not run git or gh: the orchestrator commits, pushes and replies.\n\n' "$url" "$tid" "$(bash "$here/crew-tasks.sh" "$proj" row "$tid" | cut -f3)"
+    cat "$crew/pr/$tid.changes"; } > "$f"
+  bash "$here/crew-tasks.sh" "$proj" set "$tid" review
+  echo 0 > "$cd_dir/$lane.fix"; echo "$passes" > "$cd_dir/$lane.rev"   # the manager is the reviewer of these rounds
+  if ! launch "$lane" "$f"; then bash "$here/crew-tasks.sh" "$proj" set "$tid" pr; fi
+}
+github_sync() { # merged PRs, review comments, closed issues (crew-pr.sh sync); throttled
+  [ "$(date +%s)" -ge "$pr_next" ] || return 0
+  gh_out=$(bash "$here/crew-pr.sh" "$proj" sync 2>&1); pr_next=$(( $(date +%s) + ${CREW_PR_POLL:-60} ))
+  local kind a b c
+  while read -r kind a b c; do
+    case "$kind" in
+      MERGED) ev "$b: PR of $a merged"; echo "MERGED $a $c" >> "$cd_dir/notes";;
+      ISSUE-CLOSED) ev "issue #$a closed";;
+      CHANGES) review_round "$a" "$b" "$c";;
+      CLOSED) setst "$b" brain "PR closed unmerged"; echo "the PR of $a was closed without merging: $c (the task is open again: --reset $b merged retries it on a new branch, or remove its row)" > "$cd_dir/$b.brain";;
+      SYNC-FAIL) finish_run "BRAIN sync: $a $b $c";;
+    esac
+  done <<< "$gh_out"
+}
 has_wt() { [ -f "$crew/lanes/$1.workdir" ] && [ "$(cat "$crew/lanes/$1.workdir")" != "$proj" ]; }
 siblings_pending() { # another lane is still working or waiting to be collected/merged: its code may be what this lane's acceptance needs
   local f o; for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; o=$(basename "$f" .state); [ "$o" = "$1" ] && continue
@@ -153,7 +193,9 @@ case "${1:-}" in
   --reset) l=${2:?lane}; setst "$l" "${3:-launched}"; rm -f "${cd_dir:?}/${l:?}.brain" "${cd_dir:?}/${l:?}.reported"; [ "${3:-launched}" = launched ] && echo 0 > "$cd_dir/$l.launched"; echo "reset $l (conductor state only: a failed lane stays failed and tasks keep their status; to recover and relaunch it use crew-lane-reset.sh)"; exit 0;;
 esac
 
-ev "start (autofix=$autofix autoreview=$autorev merge=$domerge lanes<=$maxlanes)"
+pertask=0; bash "$here/crew-pr.sh" "$proj" mode && pertask=1
+pr_next=0; gh_out=""
+ev "start (autofix=$autofix autoreview=$autorev merge=$domerge lanes<=$maxlanes per-task=$pertask)"
 t0=$(date +%s)
 while :; do
   [ $(( $(date +%s) - t0 )) -ge "$maxsecs" ] && finish_run TIMEOUT
@@ -169,6 +211,7 @@ while :; do
     else printf '%s\n' "$msgs" | cut -c1-400 >> "$cd_dir/notes"; ev "orchestrator: $om note(s) logged"; fi
   fi
   bash "$here/crew-budget.sh" "$proj" check >/dev/null 2>&1; [ $? -eq 2 ] && finish_run BUDGET
+  github_sync
   # 2. adopt lanes the brain launched by hand (task running/review/failed, no conductor state)
   for f in "$crew"/lanes/*.status; do [ -e "$f" ] || continue; l=$(basename "$f" .status); case "$l" in *-rev) continue;; esac
     [ -f "$cd_dir/$l.state" ] && continue
@@ -250,16 +293,24 @@ while :; do
       rm -f "$refresh"
       ev "$lane: worktree created from the merged tree"
     fi
+    if [ "$pertask" = 1 ] && [ -s "$crew/lanes/$lane.workdir" ]; then   # each task branches from the updated base
+      if ! output=$(bash "$here/crew-worktree.sh" "$proj" rebase "$lane" 2>&1); then
+        printf '%s\n' "$output"; finish_run "WORKTREE $lane: could not move the worktree to the latest base"
+      fi
+    fi
     launch "$lane" "$crew/prompts/$id.md" "$role" && { running=$((running + 1)); launched_now=1; rm -f "$cd_dir/qa.state"; }
   done < <(bash "$here/crew-tasks.sh" "$proj" next)
   # 6. finished, or stuck?
   active=0; for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; case "$(cat "$f")" in launched|reviewing|waiting) active=1;; esac; done
   for f in "$crew"/lanes/*.status; do [ -e "$f" ] || continue; alive "$(basename "$f" .status)" && active=1; done
   if [ "$active" -eq 0 ] && [ "$launched_now" -eq 0 ]; then
+    if [ "$pr_next" = 0 ]; then sleep "$poll"; continue; fi   # a PR was just opened: sync before judging what is left
     left=$(awk -F'|' 'function t(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x} NF>=7 {id=t($2); if(id=="id"||id==""||id ~ /^-/||id ~ /^:/) next; s=(t($NF)=="")?NF-1:NF; if (t($s)!="done") printf "%s ", id}' "$crew/TASKS.md" 2>/dev/null)
     if [ -z "$left" ]; then
       if [ "$autoqa" = 1 ]; then qa_gate || { sleep "$poll"; continue; }; fi
       [ -s "$cd_dir/notes" ] && cat "$cd_dir/notes"; finish_run MILESTONE-READY; fi
+    open_gh=$(printf '%s\n' "$gh_out" | grep -E '^WAITING')
+    if [ -n "$open_gh" ]; then printf '%s\n' "$open_gh"; [ -s "$cd_dir/notes" ] && cat "$cd_dir/notes"; finish_run "PR-WAIT $(printf '%s\n' "$open_gh" | grep -c .) PR(s)/issue(s) to review or merge; tasks left: ${left}"; fi
     finish_run "STUCK ${left}${nobrief:+(no brief for:$nobrief)}"
   fi
   sleep "$poll"

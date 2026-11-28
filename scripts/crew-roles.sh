@@ -39,12 +39,14 @@ case "${1:-}" in
   specialists)
     proj=$(cd "$2" && pwd -P) || exit 2
     case "${CREW_SPECIALISTS:-auto}" in none) exit 0;; auto) ;; *) echo "$CREW_SPECIALISTS"; exit 0;; esac
-    files=$( { git -C "$proj" status --porcelain --untracked-files=all 2>/dev/null | sed -E 's/^.{3}//; s/.* -> //'; } | grep -v '^\.devin-crew/' )
+    from=$(bash "$(cd "$(dirname "$0")" && pwd)/crew-pr.sh" "$proj" diffbase)
+    files=$( { git -C "$proj" status --porcelain --untracked-files=all 2>/dev/null | sed -E 's/^.{3}//; s/.* -> //'
+               [ "$from" = HEAD ] || git -C "$proj" diff --name-only "$from" 2>/dev/null; } | grep -v '^\.devin-crew/' | sort -u )
     [ -n "$files" ] || exit 0
     out=""
     printf '%s\n' "$files" | grep -qE '\.(py|go|rs|java|rb|php|cs|ts|tsx|js|jsx|swift|kt|c|cc|cpp|h|sh|sql)$' && out="security"
     printf '%s\n' "$files" | grep -qE '\.(tsx|jsx|vue|svelte|html|css|scss|swift|kt|dart)$' && out="$out a11y"
-    lines=$(git -C "$proj" diff HEAD --shortstat 2>/dev/null | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+'); lines=${lines:-0}
+    lines=$(git -C "$proj" diff "$from" --shortstat 2>/dev/null | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+'); lines=${lines:-0}
     { [ "$lines" -ge 400 ] || printf '%s\n' "$files" | grep -qE '\.sql$|migrations/|perf|bench'; } && out="$out performance"
     echo "${out# }";;
   *) sed -n 2,7p "$0"; exit 2;;
