@@ -8,6 +8,7 @@ proj="$work/proj"; mkdir -p "$proj/.devin-crew" "$work/out"
 export STUB_OUT="$work/out" STUB_BOARD="$proj/.devin-crew/BOARD.md" PATH="$here/stub:$PATH"
 crew="$proj/.devin-crew"
 export CREW_NOTIFY=off CREW_LEDGER="$work/ledger.tsv" DEVIN_SESSIONS_DB="$work/sessions.db"   # never touch the real ledger or Devin's store
+export CREW_CORES=8 CREW_RAM_GB=32   # the machine under test; its load comes from tests/stub/uptime
 expected_model=${CREW_MODEL:-$(head -1 "$here/../MODEL" 2>/dev/null)}
 expected_model=${expected_model:-swe-2-flash-high}
 export STUB_AVAILABLE_MODEL="$expected_model"
@@ -614,13 +615,21 @@ touch "$pp/.devin-crew/trusted"
 D="$pp/.devin-crew/draft"; PR="$pp/.devin-crew/prompts"
 WF="$D/PLAN.md::# Objective: speed up parse@@@$D/SPEC.md::1. parse is 2x faster@@@$D/CONTRACTS.md::version: 1@@@$D/ROSTER.md::- core (backend): owns a.py@@@$D/scopes.txt::$(printf 'core\ta.py')@@@$D/baseline.cmd::true@@@$D/QUESTIONS.md::NONE@@@$D/milestones/m1.tasks::$(printf '# speed\n| t1 | core | a.py | - | true | open |')@@@$D/prompts/t1.md::make parse faster"
 mkdir -p "$work/o-plan"; STUB_OUT="$work/o-plan" STUB_WRITE="$WF" bash "$S/crew-plan.sh" "$pp" draft "make it faster" >/dev/null 2>&1
+bash "$S/crew-wait.sh" "$pp" 60 >/dev/null 2>&1   # draft returns at once; the architect lane is still writing
 o=$(bash "$S/crew-plan.sh" "$pp" check 2>&1); rc=$?
 ok "plan check: a complete draft validates and summarizes" '[ "$rc" = 0 ] && printf "%s" "$o" | grep -q "^DRAFT: 1 milestone(s), 1 task(s), 1 lane(s)" && printf "%s" "$o" | grep -q "QUESTIONS: none"'
 rm "$D/prompts/t1.md"; o=$(bash "$S/crew-plan.sh" "$pp" check 2>&1); rc=$?
 ok "plan check: a task without a brief is a problem" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "PROBLEM: t1: no brief"'
 echo "make parse faster" > "$D/prompts/t1.md"
+printf 'db\tpg_isready -q\tdocker start pg\n' > "$D/services.txt"; o=$(bash "$S/crew-plan.sh" "$pp" check 2>&1); rc=$?
+ok "plan check: shows the services and their restart commands before the go" '[ "$rc" = 0 ] && printf "%s" "$o" | grep -q "SERVICES" && printf "%s" "$o" | grep -q "docker start pg"'
+printf 'no tab here\n' > "$D/services.txt"; o=$(bash "$S/crew-plan.sh" "$pp" check 2>&1); rc=$?
+ok "plan check: a service line without a health command is a problem" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "PROBLEM: services.txt"'
+printf 'db\ttrue\n' > "$D/services.txt"
+ok "plan draft: the architect hears about the machine and services" 'grep -q "8 cores, 32 GB" $pp/.devin-crew/prompts/plan-1.md && grep -q "services.txt" $pp/.devin-crew/prompts/plan-1.md'
 o=$(bash "$S/crew-plan.sh" "$pp" apply --ship 2>&1)
 ok "plan apply: plan, scopes, briefs and milestones in place; ship authorized in PLAN.md" 'printf "%s" "$o" | grep -q "^PLAN APPLIED" && grep -q "^ship: yes" $pp/.devin-crew/PLAN.md && [ -s $pp/.devin-crew/prompts/t1.md ] && [ -f $pp/.devin-crew/milestones/m1.tasks ] && grep -q "^| id " $pp/.devin-crew/TASKS.md && grep -q "^core" $pp/.devin-crew/scopes.txt'
+ok "plan apply: services come along" 'grep -q "^db" $pp/.devin-crew/services.txt'
 pq="$work/planpt"; cp -R "$pp" "$pq"; sed -i.bak 's/| - |/| #5 |/' "$pq"/.devin-crew/draft/milestones/m1.tasks; rm -f "$pq"/.devin-crew/draft/milestones/*.bak
 o=$(bash "$S/crew-plan.sh" "$pq" apply --ship-per-task 2>&1)
 ok "plan apply --ship-per-task: writes the mode; a #n issue dependency passes the check" 'printf "%s" "$o" | grep -q "^PLAN APPLIED" && grep -q "^ship: per-task" $pq/.devin-crew/PLAN.md && grep -q "| #5 |" $pq/.devin-crew/milestones/m1.tasks && bash "$S/crew-pr.sh" "$pq" mode'
@@ -774,6 +783,100 @@ insert into sessions(id,working_directory,created_at) values('sh-ui9','$(cd "$ux
 insert into sessions(id,working_directory,created_at) values('sh-other','$(cd "$ux" && pwd -P)',4000000001);
 insert into message_nodes values('sh-ui9',1,'{\"role\":\"user\",\"content\":\"You are lane \\\"ui9\\\" in a crew\"}','{}');"
 ok "session id: lanes sharing a folder are told apart by their preamble" '[ "$(bash $S/crew-observe.sh $ux ui9 --sid)" = sh-ui9 ]'
+
+echo "--- shared services"
+sv="$work/svc"; mkdir -p "$sv/.devin-crew"; svc="$sv/.devin-crew"
+printf '# name\thealth\trestart\ndb\ttest -f %s/db.up\techo r >> %s/restarts; touch %s/db.up\napi\ttest -f %s/api.up\n' "$sv" "$sv" "$sv" "$sv" > "$svc/services.txt"
+o=$(bash "$S/crew-services.sh" "$sv" check 2>&1); rc=$?
+ok "services check: reports each service, exit 1, restarts nothing" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "^DOWN db" && printf "%s" "$o" | grep -q "^DOWN api" && [ ! -f $sv/restarts ] && [ ! -f $svc/env.down ]'
+o=$(CREW_SERVICE_BOOT=1 bash "$S/crew-services.sh" "$sv" tick 2>&1); rc=$?
+ok "services tick: restarts what has a restart command and records what stays down" '[ "$rc" = 1 ] && [ -f $sv/db.up ] && printf "%s" "$o" | grep -q "^RESTARTED db" && grep -q "api" $svc/env.down && ! grep -q "db" $svc/env.down'
+ok "lanes reading mail are told the environment is down" 'bash "$S/lane-msg.sh" "$sv" read x | grep -q "^ENVIRONMENT DOWN: api.*do not change code"'
+touch "$sv/api.up"; o=$(bash "$S/crew-services.sh" "$sv" tick 2>&1); rc=$?
+ok "services tick: all healthy clears the outage" '[ "$rc" = 0 ] && [ ! -f $svc/env.down ] && [ "$(bash $S/lane-msg.sh $sv read x)" = "(no new mail)" ]'
+printf 'db\tfalse\techo r >> %s/tries\n' "$sv" > "$svc/services.txt"; bash "$S/crew-services.sh" "$sv" reset
+for _ in 1 2 3; do CREW_SERVICE_BOOT=0 CREW_SERVICE_RESTARTS=2 bash "$S/crew-services.sh" "$sv" tick >/dev/null 2>&1; done
+ok "services tick: a restart that does not help is capped" '[ "$(grep -c r $sv/tries)" = 2 ]'
+printf 'slow\tsleep 30\n' > "$svc/services.txt"; t0=$(date +%s); o=$(CREW_SERVICE_SECS=1 bash "$S/crew-services.sh" "$sv" check 2>&1); rc=$?
+ok "services check: a hung health command counts as down" '[ "$rc" = 1 ] && printf "%s" "$o" | grep -q "^DOWN slow" && [ $(( $(date +%s) - t0 )) -lt 15 ]'
+d=$(bash "$S/crew-doctor.sh" "$sv" 2>&1); rc=$?
+printf 'db\tfalse\tdocker start pg\n' > "$svc/services.txt"; d=$(bash "$S/crew-doctor.sh" "$sv" 2>&1); rc=$?
+ok "doctor: a service that is down fails the preflight and shows the restart command" '[ "$rc" = 1 ] && printf "%s" "$d" | grep -q "^FAIL service db is down.*docker start pg"'
+printf 'db\ttrue\n' > "$svc/services.txt"
+ok "doctor: a healthy service is OK" 'bash "$S/crew-doctor.sh" "$sv" | grep -q "^OK   service db"'
+printf 'db\tfalse\n' > "$svc/services.txt"; bash "$S/crew-services.sh" "$sv" tick >/dev/null 2>&1
+bash "$S/devin-lane.sh" "$sv" held - "$work/task.md" >/dev/null 2>&1; bash "$S/lane-msg.sh" "$sv" send x held "hi" >/dev/null
+r=$(CREW_ROUTER_MAX_SECS=4 bash "$S/crew-router.sh" "$sv" 1)
+ok "router: holds wake-ups while the environment is down" '[ "$r" = ROUTER-TIMEOUT ] && ! grep -q "wake held" $svc/events.log'
+export CREW_CONDUCT_POLL=0.3 CREW_CONDUCT_MAX_SECS=90 CREW_AUTOQA=0 CREW_AUTOREVIEW=0
+s1=$(mkcrew svc-down); touch "$s1/flag.txt"; printf 'db\tfalse\n' > "$s1/.devin-crew/services.txt"
+o=$(STUB_BOARD="$s1/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_SERVICE_WAIT=2 bash "$S/crew-conduct.sh" "$s1" 2>&1)
+ok "conductor: a dead service launches no lane and ends the run as ENVIRONMENT" 'printf "%s" "$o" | grep -q "^CONDUCT ENVIRONMENT db" && [ ! -f $s1/.devin-crew/lanes/a.status ]'
+s2=$(mkcrew svc-mid); touch "$s2/db.up"
+printf 'db\ttest -f %s/db.up\ttouch %s/db.up %s/flag.txt\n' "$s2" "$s2" "$s2" > "$s2/.devin-crew/services.txt"
+# the service dies while lane a works: its first turn ends without a DONE line and its acceptance cannot pass
+export SVCRUN='case "$STUB_PROMPT" in
+  *"task one"*) rm -f "$S2/db.up";;
+  *"task two"*) echo "DONE b: files changed: y | verified: true -> ok | contracts: v1 | open issues for other lanes: none" >> "$STUB_BOARD";;
+  *) echo "DONE a: files changed: x | verified: test -> ok | contracts: v1 | open issues for other lanes: none" >> "$STUB_BOARD";;
+esac'
+o=$(S2="$s2" STUB_BOARD="$s2/.devin-crew/BOARD.md" STUB_RUN="$SVCRUN" CREW_AUTOFIX=0 CREW_SERVICE_BOOT=1 bash "$S/crew-conduct.sh" "$s2" 2>&1)
+ok "conductor: an outage mid-run is restarted and costs no fix round" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY" && [ "$(cat $s2/.devin-crew/conduct/a.fix)" = 0 ] && grep -q "service db restarted" $s2/.devin-crew/events.log'
+unset SVCRUN
+ok "lanes are told to report an environment block instead of changing code" 'grep -q "BLOCKED: environment" "$here/../templates/preamble.md"'
+
+echo "--- busy machine"
+hv="$work/heavy"; mkdir -p "$hv/.devin-crew"
+CREW_HEAVY_SLOTS=1 bash "$S/crew-heavy.sh" "$hv" bash -c "echo s >> $hv/log; sleep 1; echo e >> $hv/log" & h1=$!
+CREW_HEAVY_SLOTS=1 bash "$S/crew-heavy.sh" "$hv" bash -c "echo s >> $hv/log; sleep 1; echo e >> $hv/log" & h2=$!
+wait $h1 $h2
+ok "heavy gate: one slot runs one command at a time and releases it" '[ "$(tr "\n" " " < $hv/log)" = "s e s e " ] && [ ! -L $hv/.devin-crew/heavy/slot-1 ]'
+CREW_HEAVY_SLOTS=1 bash "$S/crew-heavy.sh" "$hv" bash -c 'exit 7'; rc=$?
+ok "heavy gate: the command exit code comes through" '[ "$rc" = 7 ]'
+ln -s 999999 "$hv/.devin-crew/heavy/slot-1"
+ok "heavy gate: a slot left by a dead process is taken over" 'CREW_HEAVY_SLOTS=1 CREW_HEAVY_WAIT=5 bash "$S/crew-heavy.sh" "$hv" true'
+ok "heavy gate: a nested call does not deadlock" 'CREW_HEAVY_SLOTS=1 CREW_HEAVY_WAIT=3 bash "$S/crew-heavy.sh" "$hv" bash "$S/crew-heavy.sh" "$hv" true'
+ln -s $$ "$hv/.devin-crew/heavy/slot-1"; o=$(CREW_HEAVY_SLOTS=1 CREW_HEAVY_WAIT=1 bash "$S/crew-heavy.sh" "$hv" touch "$hv/ran" 2>&1); rc=$?
+ok "heavy gate: gives up after the wait cap without running the command" '[ "$rc" = 75 ] && [ ! -f $hv/ran ] && printf "%s" "$o" | grep -q "no free slot"'
+rm -f "$hv/.devin-crew/heavy/slot-1"
+ok "heavy gate: default slots follow the cores (8 -> 2)" 'ln -s $$ "$hv/.devin-crew/heavy/slot-1" && CREW_HEAVY_WAIT=2 bash "$S/crew-heavy.sh" "$hv" test -L "$hv/.devin-crew/heavy/slot-2"; r=$?; rm -f "$hv/.devin-crew/heavy/slot-1"; [ $r = 0 ]'
+vg=$(mkcrew verify-gate); mkdir -p "$vg/.devin-crew/lanes"; echo done > "$vg/.devin-crew/lanes/a.status"
+printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n| t1 | a | x | - | test -L %s/.devin-crew/heavy/slot-1 | review |\n' "$vg" > "$vg/.devin-crew/TASKS.md"
+ok "verify: acceptance commands run inside the gate" 'bash "$S/crew-verify.sh" "$vg" a | grep -q "^PASS t1 a"'
+echo 40 > "$work/load"
+ok "observe: reports MACHINE-SATURATED over 1.5x the cores" 'STUB_LOAD_FILE=$work/load bash "$S/crew-observe.sh" "$proj" api | grep -q "MACHINE-SATURATED" && ! bash "$S/crew-observe.sh" "$proj" api | grep -q "MACHINE-SATURATED"'
+ob="$work/obs"; mkdir -p "$ob/.devin-crew/lanes" "$ob/.devin-crew/heavy"; echo running > "$ob/.devin-crew/lanes/w.status"; date +%s > "$ob/.devin-crew/lanes/w.started"
+bash -c 'sleep 40 & wait' & fake=$!; sleep 0.5; kid=$(pgrep -P "$fake" | head -1); echo "$fake" > "$ob/.devin-crew/lanes/w.devinpid"
+CREW_TOOL_STALL_SECS=-1 bash "$S/crew-observe.sh" "$ob" w --stall >/dev/null; rc=$?
+ok "watchdog: an idle command is still reported hung on a calm machine" '[ "$rc" = 4 ]'
+ok "watchdog: a saturated machine is not a hung command" 'CREW_TOOL_STALL_SECS=-1 STUB_LOAD_FILE=$work/load bash "$S/crew-observe.sh" "$ob" w --stall >/dev/null'
+: > "$ob/.devin-crew/heavy/waiting-$kid"
+ok "watchdog: a command waiting for a heavy slot is not hung" 'CREW_TOOL_STALL_SECS=-1 bash "$S/crew-observe.sh" "$ob" w --stall | grep -q "waiting for a heavy slot"'
+kill "$kid" "$fake" 2>/dev/null; wait "$fake" 2>/dev/null
+m1=$(mkcrew sat-recover); echo 40 > "$work/load"
+( sleep 6; echo 1 > "$work/load"; touch "$m1/flag.txt" ) &
+o=$(STUB_LOAD_FILE="$work/load" STUB_BOARD="$m1/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOFIX=0 bash "$S/crew-conduct.sh" "$m1" 2>&1); wait
+ok "conductor: a failure on a saturated machine is rechecked later, not sent to the lane" 'printf "%s" "$o" | grep -q "^CONDUCT MILESTONE-READY" && [ "$(cat $m1/.devin-crew/conduct/a.fix)" = 0 ] && grep -q "machine saturated" $m1/.devin-crew/events.log'
+m2=$(mkcrew sat-stays); echo 40 > "$work/load"
+o=$(STUB_LOAD_FILE="$work/load" STUB_BOARD="$m2/.devin-crew/BOARD.md" STUB_APPEND_BOARD="$DONES" CREW_AUTOFIX=1 CREW_SATURATED_WAIT=1 bash "$S/crew-conduct.sh" "$m2" 2>&1)
+ok "conductor: if the machine stays saturated the lane is told to rerun before changing code" 'grep -q "machine was saturated" $m2/.devin-crew/prompts/a-fix-1.md'
+unset CREW_CONDUCT_POLL CREW_CONDUCT_MAX_SECS CREW_AUTOREVIEW; export CREW_AUTOQA=0
+rs="$work/rustproj"; mkdir -p "$rs"; echo '[package]' > "$rs/Cargo.toml"
+ok "doctor: hints a lane count for a build-heavy project" 'CREW_CORES=10 CREW_RAM_GB=16 bash "$S/crew-doctor.sh" "$rs" | grep -q "^WARN build-heavy project (Cargo.toml) on 10 cores, 16 GB -> plan at most 3 lanes"'
+ok "doctor: no hint on a big machine or a light project" '! CREW_CORES=32 CREW_RAM_GB=128 bash "$S/crew-doctor.sh" "$rs" | grep -q build-heavy && ! bash "$S/crew-doctor.sh" "$proj" | grep -q build-heavy'
+ok "lanes are told to run heavy commands through the gate" 'grep -q "crew-heavy.sh {{PROJECT}}" "$here/../templates/preamble.md"'
+sc="$work/sccache-bin"; mkdir -p "$sc"; printf '#!/bin/sh\nexit 0\n' > "$sc/sccache"; chmod +x "$sc/sccache"
+envrun() { local l=$1; shift; env -u RUSTC_WRAPPER PATH="$sc:$PATH" STUB_RUN='echo "${RUSTC_WRAPPER:-none} ${CARGO_INCREMENTAL:-unset}" > "$OUTF"' OUTF="$work/env-$l" "$@" bash "$S/devin-lane.sh" "$rs" "$l" - "$work/task.md" >/dev/null 2>&1; }
+envrun c1; envrun c2 CREW_BUILD_CACHE=0; envrun c3 RUSTC_WRAPPER=mine
+ok "build cache: sccache is used for a Rust project when installed" '[ "$(cat $work/env-c1)" = "sccache 0" ]'
+ok "build cache: off with CREW_BUILD_CACHE=0, and the user's own wrapper wins" '[ "$(cat $work/env-c2)" = "none unset" ] && [ "$(cat $work/env-c3)" = "mine unset" ]'
+
+echo "--- merge with a deletion"
+md="$work/mergedel"; mkdir -p "$md"; git -C "$md" init -q -b main; echo old > "$md/gone"; echo 1 > "$md/b"; echo moved > "$md/from"
+git -C "$md" add -A; git -C "$md" -c user.name=t -c user.email=t@t commit -qm i; mkdir -p "$md/.devin-crew"; printf 'a\tgone\na\tb\na\tfrom\na\tto\n' > "$md/.devin-crew/scopes.txt"
+bash "$S/crew-worktree.sh" "$md" add a >/dev/null; w="$md/.devin-crew/wt/a"; rm "$w/gone"; mv "$w/from" "$w/to"; echo 2 > "$w/b"
+o1=$(bash "$S/crew-worktree.sh" "$md" merge a 2>&1); echo 3 > "$w/b"; echo again >> "$w/to"; o2=$(bash "$S/crew-worktree.sh" "$md" merge a 2>&1); rc=$?
+ok "worktree merge: after merging a deletion and a move the base advances, so the next merge is clean" '[ "$rc" = 0 ] && ! printf "%s%s" "$o1" "$o2" | grep -qE "CONFLICT|fatal" && [ "$(cat $md/b)" = 3 ] && [ ! -e $md/gone ] && [ ! -e $md/from ] && grep -q again $md/to'
 
 echo "--- report"
 rep=$(bash "$S/crew-report.sh" "$proj")

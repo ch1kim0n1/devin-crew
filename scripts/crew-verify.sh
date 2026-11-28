@@ -7,7 +7,7 @@
 #    A lane a bump does not affect is cleared with: crew-verify.sh <project> ack-contract <lane>
 # Per-task mode (crew-pr.sh mode): a pass leaves the task in `review` (only a merged PR makes it `done`), shipped tasks are not rerun.
 # Exit 1 if any acceptance fails/times out or any lane built against a stale contract.
-# env: CREW_VERIFY_SECS=300 per-command timeout | CREW_VERIFY_IN=proj verify in the project root even for worktree lanes
+# env: CREW_VERIFY_HEAVY_WAIT=600 wait for a heavy slot (crew-heavy.sh) | CREW_VERIFY_SECS=300 per-command timeout | CREW_VERIFY_IN=proj verify in the project root even for worktree lanes
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
 if [ "${2:-}" = "ack-contract" ]; then   # lane's contracts untouched by the latest bump: no need to wake it just to re-sign
@@ -22,18 +22,7 @@ bad=0
 say() { echo "$*" | tee -a "$log"; }
 trim() { local v=$1; v=${v#"${v%%[![:space:]]*}"}; v=${v%"${v##*[![:space:]]}"}; printf '%s' "$v"; }
 
-# ponytail: no coreutils `timeout` on macOS, so a background sleeper does the killing
-run_limited() { # secs cmd outfile [dir] -> exit code (124 = timed out); runs in dir (default: the project root)
-  local p w rc
-  rm -f "$3.to"
-  (cd "${4:-$proj}" && exec bash -c "$2") >"$3" 2>&1 & p=$!
-  ( sleep "$1"; kill -0 "$p" 2>/dev/null || exit 0; : > "$3.to"; kill -TERM "$p" 2>/dev/null; sleep 2; kill -KILL "$p" 2>/dev/null ) 2>/dev/null & w=$!
-  disown "$w" 2>/dev/null
-  wait "$p"; rc=$?
-  pkill -P "$w" 2>/dev/null; kill "$w" 2>/dev/null
-  if [ -e "$3.to" ]; then rc=124; rm -f "$3.to"; fi
-  return "$rc"
-}
+. "$(cd "$(dirname "$0")" && pwd)/crew-lib.sh"
 
 lane_running() { [ "$(cat "$crew/lanes/$1.status" 2>/dev/null)" = running ]; }
 
@@ -54,7 +43,15 @@ if [ -f "$crew/TASKS.md" ]; then
     [ "$tstatus" = "done" ] && [ "$passed" = review ] && { say "SKIP $id $lane: merged"; continue; }
     # A lane with a worktree is verified INSIDE it (its own work, before and after merge); CREW_VERIFY_IN=proj verifies the shared tree instead.
     vdir="$proj"; [ "${CREW_VERIFY_IN:-lane}" = lane ] && [ -f "$crew/lanes/$lane.workdir" ] && [ -d "$(cat "$crew/lanes/$lane.workdir")" ] && vdir=$(cat "$crew/lanes/$lane.workdir")
+    # acceptance commands are builds and test runs: they take a heavy slot like the lanes do (after the wait they run anyway)
+    held=${CREW_HEAVY_HELD:-0}
+    if [ "$held" != 1 ]; then
+      heavy_acquire "$crew" "${CREW_VERIFY_HEAVY_WAIT:-600}" || say "NOTE $id: no heavy slot free in time, running anyway"
+      export CREW_HEAVY_HELD=1
+    fi
+    build_cache_env "$vdir"
     run_limited "$secs" "$acc" "$out" "$vdir"; rc=$?
+    if [ "$held" != 1 ]; then heavy_release; unset CREW_HEAVY_HELD; fi
     tasks="$(cd "$(dirname "$0")" && pwd)/crew-tasks.sh"
     if [ "$rc" -eq 0 ]; then bash "$tasks" "$proj" set "$id" "$passed"; say "PASS $id $lane: $acc"
     elif [ "$rc" -eq 124 ]; then bad=1; bash "$tasks" "$proj" set "$id" failed; say "TIMEOUT $id $lane (>${secs}s): $acc"; tail -n 5 "$out" | sed 's/^/    /' | tee -a "$log"

@@ -18,7 +18,7 @@ t0=$(date +%s); idle=0
 ev "router start"
 while :; do
   [ $(( $(date +%s) - t0 )) -ge "$max" ] && { ev "router timeout"; echo "ROUTER-TIMEOUT"; exit 3; }
-  running=0; woke=0; stuck=""; orch=0
+  running=0; woke=0; stuck=""; orch=0; held=0
   for f in "$crew"/lanes/*.status; do
     [ -e "$f" ] || continue
     case "$(cat "$f")" in running|waking) running=$((running + 1));; esac
@@ -28,6 +28,7 @@ while :; do
     if [ "$lane" = orchestrator ]; then orch=$n; continue; fi
     case "$st" in
       done|failed\([0-9]*\))
+        [ -f "$crew/env.down" ] && { held=1; continue; }   # a shared service is down: a woken lane could only fail against it
         if [ -f "$crew/lanes/$lane.needs-user" ]; then stuck="$stuck $lane(needs-user:$(head -1 "$crew/lanes/$lane.needs-user"),$n)"; continue; fi
         if bash "$here/crew-budget.sh" "$proj" check >/dev/null 2>&1; [ $? -eq 2 ]; then stuck="$stuck $lane(budget-exceeded,$n)"; continue; fi
         echo waking > "$crew/lanes/$lane.status"; ev "wake $lane ($n unread, was $st)"
@@ -38,7 +39,7 @@ while :; do
     esac
   done < <(bash "$here/lane-msg.sh" "$proj" pending)
   if [ "$orch" -gt 0 ]; then ev "orchestrator mail $orch"; echo "ORCHESTRATOR-MAIL $orch"; exit 0; fi
-  if [ "$running" -eq 0 ] && [ "$woke" -eq 0 ]; then idle=$((idle + 1)); else idle=0; fi
+  if [ "$running" -eq 0 ] && [ "$woke" -eq 0 ] && [ "$held" -eq 0 ]; then idle=$((idle + 1)); else idle=0; fi
   if [ "$idle" -ge 2 ]; then
     ev "quiescent${stuck:+ stuck:$stuck}"
     if [ -n "$stuck" ]; then echo "QUIESCENT-WITH-STUCK-MAIL$stuck"; else echo "QUIESCENT"; fi

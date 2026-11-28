@@ -9,6 +9,7 @@
 #                              CREW_GIT_TARGET="<remote> <branch>"). Shared-tree mode only; default none.
 #      CREW_MAX_SECS=2700      wall-clock cap per turn, nudges included (status failed(timeout))
 #      CREW_STALL_RETRIES=2    automatic kill+nudge attempts when the lane stalls (see crew-observe.sh)
+#      CREW_BUILD_CACHE=0      do not set RUSTC_WRAPPER=sccache for a Rust project (done when sccache is installed and no wrapper is set)
 #      CREW_LANE_UI=tmux|terminal|iterm   run the lane as a visible interactive session (`devin --prompt-file`) in a tmux window or a
 #                              new Terminal / iTerm window (macOS) instead of headless `devin -p`: the user can read along and type.
 #                              The turn ends when the lane posts its DONE line (the session is closed CREW_UI_GRACE=30 s later) or the
@@ -150,6 +151,7 @@ fi
 if [ -n "$tid" ]; then bash "$skill_dir/scripts/crew-tasks.sh" "$proj" set "$tid" running
 elif [ "$task" != "-" ]; then bash "$skill_dir/scripts/crew-tasks.sh" "$proj" lane "$lane" "failed|review" running; fi
 cd "$workdir" || exit 2
+. "$skill_dir/scripts/crew-lib.sh"; build_cache_env "$workdir"
 max=${CREW_MAX_SECS:-2700}; retries=${CREW_STALL_RETRIES:-2}; t0=$(date +%s); start=$t0
 : > "$log"
 
@@ -210,6 +212,7 @@ run_ui() {
   printf '%s\n' "$p" > "$pf"; rm -f "${pidf:?}" "${xf:?}" "$crew/lanes/$lane.export.json"   # a stale export would name the wrong session
   { echo '#!/usr/bin/env bash'
     printf 'cd %q || exit 2\n' "$workdir"
+    [ -z "${CREW_CACHE_ON:-}" ] || echo 'export RUSTC_WRAPPER=sccache CARGO_INCREMENTAL=0'   # a tmux window does not inherit our environment
     # the inner shell records its pid and becomes devin, which stays in the window's foreground and keeps the keyboard
     printf "bash -c 'echo \$\$ > \"\$0\"; exec \"\$@\"' %q" "$pidf"
     printf ' %q' "$(command -v devin)" --prompt-file "$pf" --model "$model" --permission-mode "$perm" "$@"
