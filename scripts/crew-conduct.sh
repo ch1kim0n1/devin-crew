@@ -18,17 +18,21 @@
 #   CONDUCT STUCK <ids>                open tasks cannot launch (no brief, or dependencies not done)
 #   CONDUCT PR-WAIT <n>                per-task mode (or `#<n>` dependencies): only open PRs / issues remain. Review each PR (comment
 #                                      `[manager] ...` or merge it), then run me again; I resume the lane on a [manager] comment
+#   CONDUCT ENVIRONMENT <names>        a shared service (services.txt) stayed down CREW_SERVICE_WAIT=300 s despite its restart command
 #   CONDUCT TIMEOUT
+# While a service is down I launch, collect and fix nothing. A failure seen on a saturated machine is rechecked when the load drops
+# (at most CREW_SATURATED_WAIT=900 s) before the lane is asked to fix it.
 # Per-task mode (crew-pr.sh mode): a clean lane is shipped (crew-ship.sh task) instead of merged; its next task waits until that PR merges,
 # starts from the updated base, and dependents wait for the merge too.
 # A digest that is the Nth wake of this run (CREW_FRESH_AFTER, default 12) also prints FRESH-SESSION: the brain's context is the cost, so
 # finish the decision, keep PLAN.md current and continue in a new session (/devin-crew resume).
 #   bash crew-conduct.sh <project> --report        launch the reporter Devin, wait for it, print the head of .devin-crew/REPORT.md
-# env: CREW_PR_POLL=60 seconds between GitHub checks | CREW_PR_ROUNDS=5 review rounds per task | CREW_AUTOFIX=2 fix rounds per lane | CREW_AUTOREVIEW=1 (0 off) | CREW_REVIEW_PASSES=2 | CREW_MERGE=1 (worktree lanes) |
+# env: CREW_SERVICE_POLL=60 | CREW_PR_POLL=60 seconds between GitHub checks | CREW_PR_ROUNDS=5 review rounds per task | CREW_AUTOFIX=2 fix rounds per lane | CREW_AUTOREVIEW=1 (0 off) | CREW_REVIEW_PASSES=2 | CREW_MERGE=1 (worktree lanes) |
 #      CREW_AUTOQA=1 (0 off: the brain runs QA itself, expensive) | CREW_FRESH_AFTER=12 | CREW_CONDUCT_MAX_LANES=5 | CREW_CONDUCT_POLL=10 | CREW_CONDUCT_MAX_SECS=7200
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
 shift; here="$(cd "$(dirname "$0")" && pwd)"; crew="$proj/.devin-crew"; cd_dir="$crew/conduct"; mkdir -p "$cd_dir" "$crew/prompts" "$crew/lanes" "$crew/logs"
+. "$here/crew-lib.sh"
 autofix=${CREW_AUTOFIX:-2}; autorev=${CREW_AUTOREVIEW:-1}; passes=${CREW_REVIEW_PASSES:-2}; domerge=${CREW_MERGE:-1}
 autoqa=${CREW_AUTOQA:-1}; fresh_after=${CREW_FRESH_AFTER:-12}
 maxlanes=${CREW_CONDUCT_MAX_LANES:-5}; poll=${CREW_CONDUCT_POLL:-10}; maxsecs=${CREW_CONDUCT_MAX_SECS:-7200}
@@ -57,7 +61,7 @@ finish_run() { # the one place the brain is woken: count wakes, and say when the
 
 launch() { # launch <lane> <brief> [role]: detached; records the launch stamp; a refusal becomes a BRAIN state
   local lane=$1 brief=$2 role=${3:-} out="$crew/logs/$1-launch.out"
-  date +%s > "$cd_dir/$lane.launched"; : > "$out"
+  date +%s > "$cd_dir/$lane.launched"; : > "$out"; rm -f "${cd_dir:?}/${lane:?}.satsince"
   CREW_ROLE=$role bash "$here/crew-launch.sh" "$proj" lane "$lane" - "$brief" >/dev/null 2>&1
   for _ in $(seq 1 40); do alive "$lane" && break; [ "$(started_of "$lane")" -ge "$(num "$lane" launched)" ] && break; sleep 0.2; done
   if ! alive "$lane" && [ "$(started_of "$lane")" -lt "$(num "$lane" launched)" ]; then
@@ -66,8 +70,14 @@ launch() { # launch <lane> <brief> [role]: detached; records the launch stamp; a
 }
 fix_lane() { # fix_lane <lane> <kind> <text>: resume the lane with a correction brief, bounded rounds
   local lane=$1 kind=$2 text=$3 n f
-  if [ "$(num "$lane" fix)" -ge "$autofix" ]; then setst "$lane" brain "fix rounds exhausted"; printf 'fix rounds exhausted (%s). Last problem:\n%s\n' "$autofix" "$text" > "$cd_dir/$lane.brain"; return 1; fi
-  inc "$lane" fix; n=$(num "$lane" fix); f="$crew/prompts/$lane-fix-$n.md"
+  # a run that overlapped a service outage does not use up a fix round (twice at most)
+  if [ -f "$crew/env.last" ] && [ "$(cat "$crew/env.last")" -ge "$(started_of "$lane")" ] && [ "$(num "$lane" envfree)" -lt 2 ]; then
+    inc "$lane" envfree; ev "$lane: free fix round, a shared service was down during its run"
+  else
+    if [ "$(num "$lane" fix)" -ge "$autofix" ]; then setst "$lane" brain "fix rounds exhausted"; printf 'fix rounds exhausted (%s). Last problem:\n%s\n' "$autofix" "$text" > "$cd_dir/$lane.brain"; return 1; fi
+    inc "$lane" fix
+  fi
+  n=$(( $(num "$lane" fix) + $(num "$lane" envfree) )); f="$crew/prompts/$lane-fix-$n.md"
   printf 'Your work was checked automatically and needs fixes (%s). Fix ONLY what is listed, re-run your acceptance command, re-read CONTRACTS.md, then post a new DONE line in the exact format.\n\n%s\n' "$kind" "$text" > "$f"
   launch "$lane" "$f"
 }
@@ -151,7 +161,7 @@ qa_gate() { # all tasks done: have a QA Devin verify the milestone. Returns 0 = 
 }
 review_round() { # <task> <lane> <url>: a [manager] comment is newer than the lane's reply -> resume the lane with it
   local tid=$1 lane=$2 url=$3 n f
-  case "$(st_of "$lane")" in launched|reviewing|waiting|brain) return 0;; esac
+  case "$(st_of "$lane")" in launched|reviewing|waiting|saturated|brain) return 0;; esac
   alive "$lane" && return 0
   n=$(( $(num "$tid" round) + 1 ))
   if [ "$n" -gt "${CREW_PR_ROUNDS:-5}" ]; then setst "$lane" brain "review rounds exhausted"; printf 'review rounds exhausted (%s) for %s: %s\n' "${CREW_PR_ROUNDS:-5}" "$tid" "$url" > "$cd_dir/$lane.brain"; return 1; fi
@@ -159,7 +169,7 @@ review_round() { # <task> <lane> <url>: a [manager] comment is newer than the la
   { printf 'A reviewer asked for changes on your open pull request %s (task %s). Address every point below, change only files in your scope, re-run your acceptance command (%s), and post a new DONE line. Do not run git or gh: the orchestrator commits, pushes and replies.\n\n' "$url" "$tid" "$(bash "$here/crew-tasks.sh" "$proj" row "$tid" | cut -f3)"
     cat "$crew/pr/$tid.changes"; } > "$f"
   bash "$here/crew-tasks.sh" "$proj" set "$tid" review
-  echo 0 > "$cd_dir/$lane.fix"; echo "$passes" > "$cd_dir/$lane.rev"   # the manager is the reviewer of these rounds
+  echo 0 > "$cd_dir/$lane.fix"; echo 0 > "$cd_dir/$lane.envfree"; echo "$passes" > "$cd_dir/$lane.rev"   # the manager is the reviewer of these rounds
   if ! launch "$lane" "$f"; then bash "$here/crew-tasks.sh" "$proj" set "$tid" pr; fi
 }
 github_sync() { # merged PRs, review comments, closed issues (crew-pr.sh sync); throttled
@@ -176,10 +186,36 @@ github_sync() { # merged PRs, review comments, closed issues (crew-pr.sh sync); 
     esac
   done <<< "$gh_out"
 }
+services_tick() { # check (and restart) the shared services now; returns 1 when anything was or is down
+  local out name kind; [ -f "$crew/services.txt" ] || return 0
+  out=$(bash "$here/crew-services.sh" "$proj" tick 2>&1)
+  while read -r kind name; do case "$kind" in
+    RESTARTED) ev "service $name restarted";;
+    DOWN) ev "service $name is down";;
+  esac; done <<< "$out"
+  svc_next=$(( $(date +%s) + ${CREW_SERVICE_POLL:-60} )); [ -f "$crew/env.down" ] && svc_next=0
+  [ -z "$out" ]
+}
+environment_gate() { # 1 = a service is down: do nothing that could fail because of it
+  [ -f "$crew/services.txt" ] || return 0
+  [ "$(date +%s)" -ge "$svc_next" ] && services_tick
+  [ -f "$crew/env.down" ] || return 0
+  local since names; since=$(head -1 "$crew/env.down"); names=$(sed -n 2p "$crew/env.down")
+  [ $(( $(date +%s) - since )) -ge "${CREW_SERVICE_WAIT:-300}" ] && finish_run "ENVIRONMENT $names down for $(( $(date +%s) - since ))s: fix it (bash $here/crew-services.sh $proj check), then run the conductor again"
+  return 1
+}
+saturation_hold() { # <lane> <collect output>: 0 = a failure seen on a saturated machine, recheck later instead of fixing
+  local lane=$1 first
+  printf '%s\n' "$2" | grep -qE '^ *(FAIL|TIMEOUT) ' || return 1
+  machine_saturated || return 1
+  first=$(cat "$cd_dir/$lane.satsince" 2>/dev/null); [ -n "$first" ] || { first=$(date +%s); echo "$first" > "$cd_dir/$lane.satsince"; }
+  [ $(( $(date +%s) - first )) -lt "${CREW_SATURATED_WAIT:-900}" ] || return 1
+  setst "$lane" saturated "machine saturated (load $(machine_load)), rechecking when it drops"
+}
 has_wt() { [ -f "$crew/lanes/$1.workdir" ] && [ "$(cat "$crew/lanes/$1.workdir")" != "$proj" ]; }
 siblings_pending() { # another lane is still working or waiting to be collected/merged: its code may be what this lane's acceptance needs
   local f o; for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; o=$(basename "$f" .state); [ "$o" = "$1" ] && continue
-    case "$(cat "$f")" in launched|reviewing) return 0;; esac; done; return 1; }
+    case "$(cat "$f")" in launched|reviewing|saturated) return 0;; esac; done; return 1; }
 skip_review() { ev "$1 review skipped: $2"; echo "REVIEW-SKIPPED $1 ($2)" >> "$cd_dir/notes"; merge_lane "$1"; }
 
 case "${1:-}" in
@@ -194,7 +230,8 @@ case "${1:-}" in
 esac
 
 pertask=0; bash "$here/crew-pr.sh" "$proj" mode && pertask=1
-pr_next=0; gh_out=""
+pr_next=0; gh_out=""; svc_next=0
+[ -f "$crew/services.txt" ] && bash "$here/crew-services.sh" "$proj" reset   # a new run gets fresh restart attempts
 ev "start (autofix=$autofix autoreview=$autorev merge=$domerge lanes<=$maxlanes per-task=$pertask)"
 t0=$(date +%s)
 while :; do
@@ -211,6 +248,7 @@ while :; do
     else printf '%s\n' "$msgs" | cut -c1-400 >> "$cd_dir/notes"; ev "orchestrator: $om note(s) logged"; fi
   fi
   bash "$here/crew-budget.sh" "$proj" check >/dev/null 2>&1; [ $? -eq 2 ] && finish_run BUDGET
+  environment_gate || { sleep "$poll"; continue; }
   github_sync
   # 2. adopt lanes the brain launched by hand (task running/review/failed, no conductor state)
   for f in "$crew"/lanes/*.status; do [ -e "$f" ] || continue; l=$(basename "$f" .status); case "$l" in *-rev) continue;; esac
@@ -231,13 +269,20 @@ while :; do
           n=$(bash "$here/crew-worktree.sh" "$proj" sync "$l" 2>/dev/null | tail -1)
           case "$n" in ''|*[!0-9]*|0) ;; *) ev "$l: synced $n file(s) of merged sibling work into its worktree; collecting again"; out=$(bash "$here/crew-collect.sh" "$proj" "$l" 2>&1); rc=$?;; esac
         fi
+        if [ "$rc" -eq 1 ]; then
+          services_tick || continue                 # a service died under it: collect again once it is back
+          saturation_hold "$l" "$out" && continue
+        fi
         case "$rc" in
           0) after_clean "$l";;
-          1) fix_lane "$l" "acceptance/contract" "$(printf '%s\n' "$out" | grep -v '^VERDICT' | head -30)";;
+          1) note=""; machine_saturated && note=$'NOTE: the machine was saturated when this was checked. Rerun the failing command through crew-heavy.sh first; change code only if it still fails.\n\n'
+             fix_lane "$l" "acceptance/contract" "$note$(printf '%s\n' "$out" | grep -v '^VERDICT' | head -30)";;
           3) ;;
           *) setst "$l" brain "$(printf '%s' "$out" | grep '^VERDICT' | head -1)"; printf '%s\n' "$out" | head -30 > "$cd_dir/$l.brain";;
         esac;;
       waiting) siblings_pending "$l" || setst "$l" launched "siblings merged, collecting again";;
+      saturated)
+        if ! machine_saturated || [ $(( $(date +%s) - $(num "$l" satsince) )) -ge "${CREW_SATURATED_WAIT:-900}" ]; then setst "$l" launched "collecting again"; fi;;
       reviewing)
         r="$l-rev"; alive "$r" && continue
         if [ "$(started_of "$r")" -lt "$(num "$r" launched)" ]; then   # reviewer has not started (or was refused)
@@ -265,12 +310,13 @@ while :; do
   nobrief=""; launched_now=0
   while read -r id lane; do
     [ -z "$id" ] && continue
-    case "$(st_of "$lane")" in brain|launched|reviewing|waiting) continue;; esac
+    case "$(st_of "$lane")" in brain|launched|reviewing|waiting|saturated) continue;; esac
     [ "$running" -ge "$maxlanes" ] && break
+    [ -f "$crew/env.down" ] && break
     if [ ! -s "$crew/prompts/$id.md" ]; then nobrief="$nobrief $id"; continue; fi
     if [ -s "$crew/prompts/$id.role" ]; then role=$(head -1 "$crew/prompts/$id.role"); else role=$(bash "$here/crew-roles.sh" pick "$proj" "$id" 2>/dev/null); fi   # the team member that fits the files
     [ -f "$here/../templates/roles/${role:-x}.md" ] || role=implementer
-    echo 0 > "$cd_dir/$lane.fix"; echo 0 > "$cd_dir/$lane.rev"
+    echo 0 > "$cd_dir/$lane.fix"; echo 0 > "$cd_dir/$lane.rev"; echo 0 > "$cd_dir/$lane.envfree"
     # Later waves and fix rounds need a worktree cut from the current merged tree.
     refresh="$cd_dir/$lane.refresh-worktree"
     isolated=0
@@ -301,9 +347,9 @@ while :; do
     launch "$lane" "$crew/prompts/$id.md" "$role" && { running=$((running + 1)); launched_now=1; rm -f "$cd_dir/qa.state"; }
   done < <(bash "$here/crew-tasks.sh" "$proj" next)
   # 6. finished, or stuck?
-  active=0; for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; case "$(cat "$f")" in launched|reviewing|waiting) active=1;; esac; done
+  active=0; for f in "$cd_dir"/*.state; do [ -e "$f" ] || continue; case "$(cat "$f")" in launched|reviewing|waiting|saturated) active=1;; esac; done
   for f in "$crew"/lanes/*.status; do [ -e "$f" ] || continue; alive "$(basename "$f" .status)" && active=1; done
-  if [ "$active" -eq 0 ] && [ "$launched_now" -eq 0 ]; then
+  if [ "$active" -eq 0 ] && [ "$launched_now" -eq 0 ] && [ ! -f "$crew/env.down" ]; then
     if [ "$pr_next" = 0 ]; then sleep "$poll"; continue; fi   # a PR was just opened: sync before judging what is left
     left=$(awk -F'|' 'function t(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x} NF>=7 {id=t($2); if(id=="id"||id==""||id ~ /^-/||id ~ /^:/) next; s=(t($NF)=="")?NF-1:NF; if (t($s)!="done") printf "%s ", id}' "$crew/TASKS.md" 2>/dev/null)
     if [ -z "$left" ]; then

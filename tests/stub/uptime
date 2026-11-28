@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fake `uptime` for tests/smoke.sh: a fixed load, so the real machine's load never changes a result. $STUB_LOAD_FILE overrides it.
+l=0.50; [ -n "${STUB_LOAD_FILE:-}" ] && [ -f "$STUB_LOAD_FILE" ] && l=$(cat "$STUB_LOAD_FILE")
+echo " 12:00  up 1 day, 1 user, load averages: $l $l $l"

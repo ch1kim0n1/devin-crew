@@ -167,6 +167,13 @@ Dry run any launch with `bash scripts/devin-lane.sh --print <project> <lane> - <
 
 Details and limits: [reference/github.md](reference/github.md).
 
+### Shared services and busy machines
+
+- Tests need a database or Docker? The plan lists each service with a health command and, if you want, a restart command. The crew waits out an outage instead of letting lanes "fix" working code.
+- Builds, test suites and browser runs queue for a limited number of slots, failures on an overloaded machine are rechecked before a lane touches code, and Rust lanes share builds through `sccache` when it is installed.
+
+Details and limits: [reference/environment.md](reference/environment.md).
+
 ## Safety (read this first)
 
 Lanes run Devin in **bypass mode** (`--permission-mode dangerous`): nothing asks permission before a lane runs a command or edits a file. Guardrails (file scopes, worktrees, snapshots, scope checks, no git writes by default) limit the damage; they are **not a sandbox**.

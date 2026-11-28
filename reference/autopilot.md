@@ -21,7 +21,7 @@ With `ship: per-task` steps 5 and 6 change: every task is its own PR (`reference
 - Caps: `CREW_AUTOPILOT_MAX_SECS` (6 h), the lane-minute budget (`BUDGET`), `CREW_QA_ROUNDS`.
 
 ## When it stops (ATTENTION)
-`.devin-crew/autopilot/ATTENTION` holds the reason and the last conductor digest, and a desktop notification was sent. Reasons: `NEEDS-USER ...` (tell the user, their fix, then retry), `BRAIN <lane>: why`, `ORCHESTRATOR-MAIL`, `PR-WAIT` (per-task PRs or `#n` dependencies: `reference/github.md`), `BUDGET`, `STUCK`, `QA still failing after N rounds`, `QA found the same failures again`, time cap. Handle it (a brief, a scope fix, a plan change after telling the user), `crew-conduct.sh <project> --reset <lane>` for BRAIN lanes, then `crew-autopilot.sh <project> --detach` again: state is in files, it continues.
+`.devin-crew/autopilot/ATTENTION` holds the reason and the last conductor digest, and a desktop notification was sent. Reasons: `NEEDS-USER ...` (tell the user, their fix, then retry), `BRAIN <lane>: why`, `ORCHESTRATOR-MAIL`, `PR-WAIT` (per-task PRs or `#n` dependencies: `reference/github.md`), `ENVIRONMENT <services>` (`reference/environment.md`: tell the user), `BUDGET`, `STUCK`, `QA still failing after N rounds`, `QA found the same failures again`, time cap. Handle it (a brief, a scope fix, a plan change after telling the user), `crew-conduct.sh <project> --reset <lane>` for BRAIN lanes, then `crew-autopilot.sh <project> --detach` again: state is in files, it continues.
 
 ## Files
 `autopilot/` (`pid`, `log`, `loaded`, `current`, `rounds`, `final`, `last.digest`, `ATTENTION`, `DONE`), `milestones/`, `acceptance/`, `qa/` (verdicts, `spec/`), `REPORT.md`, `PR_URL`.

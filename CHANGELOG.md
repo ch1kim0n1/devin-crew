@@ -5,10 +5,13 @@
 - New: per-task shipping (`crew-plan.sh go --ship-per-task`, or `CREW_SHIP=per-task` with `CREW_SHIP_OK=1`): one branch and PR per task, `issue: <n>` in a brief becomes `Closes #<n>`, dependents and the lane's next task wait for the merge and start from the updated base (#5).
 - New: `crew-pr.sh`: `[manager]` / `[lane-x]` comment review loop run by the conductor, `wait` for lanes, `watch` for the manager, `#<n>` issue dependencies in TASKS.md, `PR-WAIT` digest. Only the `gh` account's and repo owners', members' and collaborators' comments count (#6).
 - New: `CREW_LANE_UI=tmux|terminal|iterm` runs lanes as visible interactive Devin sessions (#7).
+- New: shared services (`.devin-crew/services.txt`, `crew-services.sh`): checked by the doctor and the conductor, restarted with the approved command, no launches or fix rounds while down, `ENVIRONMENT` digest (#8).
+- New: `crew-heavy.sh` gate for heavy commands (used for acceptance runs too), `MACHINE-SATURATED` in observe, recheck instead of fix on a saturated machine, lane-count hint from cores and RAM, `sccache` for Rust projects when installed (#9).
+- Fix: a worktree merge that included a deleted file did not advance the lane's base, so its next merge reported a false conflict.
 - Fix: `crew-doctor.sh` fetches and warns when the branch is behind its upstream or the remote default branch, so lanes do not start from a stale base (#4).
 - Fix: `crew-ship.sh` reported success when `git push` or `gh pr create` failed (the exit status was hidden by a pipe).
 - Fix: `crew-ship.sh` could not commit under macOS's stock bash 3.2 (syntax error in the secrets scan).
-- Tests: smoke suite 259 checks.
+- Tests: smoke suite grows to cover the above.
 
 ## 1.4.1 (2026-11-21)
 

@@ -6,6 +6,8 @@
 #   bash crew-observe.sh <project> --timeline        .devin-crew/events.log
 # Sources: Devin's sessions.db (live message + tool-call records of THIS lane's session only), the Devin process log
 # (~/.local/share/devin/cli/logs/*_<pid>.log), the process tree, file mtimes in the lane's workdir, the lane's own log.
+# A machine loaded past CREW_SATURATED_FACTOR (1.5) x its cores is reported as MACHINE-SATURATED and no command is called hung then;
+# a command waiting for a heavy slot (crew-heavy.sh) is never hung.
 # Never reads credentials. Thresholds (seconds): CREW_EMPTY_STALL_SECS=120 CREW_MODEL_STALL_SECS=420 CREW_TOOL_STALL_SECS=1200
 set -u
 proj=$(cd "$1" && pwd -P) || exit 2
@@ -14,6 +16,7 @@ DB=${DEVIN_SESSIONS_DB:-$HOME/.local/share/devin/cli/sessions.db}
 LOGS="$(dirname "$DB")/logs"
 EMPTY_STALL=${CREW_EMPTY_STALL_SECS:-120}; MODEL_STALL=${CREW_MODEL_STALL_SECS:-420}; TOOL_STALL=${CREW_TOOL_STALL_SECS:-1200}
 now=$(date +%s)
+. "$(cd "$(dirname "$0")" && pwd)/crew-lib.sh"
 
 q() { sqlite3 -readonly "$DB" "$1" 2>/dev/null; }
 esc() { printf '%s' "${1//\'/\'\'}"; }
@@ -136,10 +139,11 @@ diagnose() { # lane [mode]
   local alive=0; [ -n "$dpid" ] && kill -0 "$dpid" 2>/dev/null && alive=1
 
   # --- process tree: tool commands = descendants of devin that are not devin itself
-  local tools="" tool_cpu=0 tpid
+  local tools="" tool_cpu=0 tpid queued=0
   if [ "$alive" -eq 1 ]; then
     acp=$(pgrep -P "$dpid" 2>/dev/null | head -1)
     for tpid in $(descendants "$dpid"); do
+      [ -f "$crew/heavy/waiting-$tpid" ] && queued=1
       local cmd; cmd=$(ps -o command= -p "$tpid" 2>/dev/null | cut -c1-110)
       case "$cmd" in *"devin acp"*|*"devin -p"*|"") continue ;; esac
       tools="$tools$tpid|$(ps -o etime= -p "$tpid" | tr -d ' ')|$(ps -o pcpu= -p "$tpid" | tr -d ' ')|$cmd"$'\n'
@@ -170,8 +174,9 @@ diagnose() { # lane [mode]
   elif [ "$status" != running ] && [ "$status" != not-started ]; then
     case "$status" in done) state=FINISHED; why="lane exited cleanly";; *"timeout"*) state=TIMEOUT; why="killed by the wall-clock watchdog";; *) state=FAILED; why="exited with $status";; esac
   elif [ "$status" = not-started ]; then state=NOT-STARTED; why="no launch recorded"
+  elif [ "$queued" = 1 ]; then state=WORKING-TOOL; why="a command is waiting for a heavy slot (crew-heavy.sh)"
   elif [ -n "$tools" ]; then
-    if [ "$idle" -gt "$TOOL_STALL" ] && awk "BEGIN{exit !($tool_cpu < 1.0)}"; then state=STALLED-TOOL-HUNG; why="a command has run with ~0% CPU and no session activity for $(ago "$idle")"
+    if [ "$idle" -gt "$TOOL_STALL" ] && awk "BEGIN{exit !($tool_cpu < 1.0)}" && ! machine_saturated; then state=STALLED-TOOL-HUNG; why="a command has run with ~0% CPU and no session activity for $(ago "$idle")"
     else state=WORKING-TOOL; why="running a command; last session activity $(ago "$idle") ago"; fi
   elif [ "${trail:-0}" -ge 1 ] && [ "$idle" -gt "$EMPTY_STALL" ]; then
     state=STALLED-EMPTY-RESPONSE; why="the model returned ${trail} empty repl$([ "$trail" = 1 ] && echo y || echo ies) in a row (no text, no tool call); last real progress $(ago "$idle") ago; Devin never exited"
@@ -195,6 +200,7 @@ diagnose() { # lane [mode]
   for f in "$LOGS"/devin_*_"${acp:-x}".log; do [ -f "$f" ] && plog=$f; done
   echo "== lane $lane   session ${sid:-unknown}   status $status   up $(ago $((now - started)))"
   echo "state:          $state"
+  if machine_saturated; then echo "machine:        MACHINE-SATURATED: load $(machine_load) on $(machine_cores) cores: timeouts now are environment, rerun before changing code"; fi
   echo "why:            $why"
   echo "last progress:  $(hms "$last") ($(ago "$idle") ago)   [last record of any kind $(hms "${lnat:-0}"), last file change $(hms "${fsm:-0}"), empty replies since progress: ${trail:-0}]"
   echo "last tool call: ${toolrow:-none}"

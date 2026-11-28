@@ -50,7 +50,10 @@ case "$cmd" in
     # diffs from what main now holds (otherwise its second merge of the same file conflicts with its own first one).
     advance_base() {
       [ $# -gt 0 ] || return 0
-      git -C "$wt" add -A -- "$@" && git -C "$wt" -c user.name=crew -c user.email=crew@local commit -q --no-verify -m "crew base (post-merge)" -- "$@" >/dev/null 2>&1 || true
+      # Empty the index first (`add -N` above staged deletions, which `git add` then rejects), stage exactly these, commit the index.
+      git -C "$wt" reset -q && printf '%s\0' "$@" | git -C "$wt" update-index --add --remove -z --stdin &&
+        git -C "$wt" -c user.name=crew -c user.email=crew@local commit -q --no-verify -m "crew base (post-merge)" >/dev/null 2>&1 ||
+        echo "WARNING: could not advance the base of $wt: its next merge may report false conflicts" >&2
     }
     excl=(); for l in $links; do excl+=(":!$l"); done
     excl+=(":(exclude,glob)**/__pycache__/**" ":(exclude,glob)**/*.pyc" ":(exclude,glob)**/.DS_Store")
@@ -59,13 +62,13 @@ case "$cmd" in
     # Only the lane's own scope globs (scopes.txt) are merged; anything else it touched is reported and left behind.
     globs=(); while IFS=$'\t' read -r l g || [ -n "$l" ]; do [ "$l" = "$lane" ] && globs+=("$g"); done < "$crew/scopes.txt"
     [ ${#globs[@]} -gt 0 ] || { echo "$lane has no scope in scopes.txt; refusing to merge" >&2; exit 1; }
-    skipped=$(comm -23 <(git -C "$wt" diff HEAD --name-only -- . "${excl[@]}" | sort) <(git -C "$wt" diff HEAD --name-only -- "${globs[@]}" | sort))
+    skipped=$(comm -23 <(git -C "$wt" diff HEAD --no-renames --name-only -- . "${excl[@]}" | sort) <(git -C "$wt" diff HEAD --no-renames --name-only -- "${globs[@]}" | sort))
     [ -n "$skipped" ] && { echo "$lane: NOT merged (outside its scope):"; echo "$skipped" | sed 's/^/  /'; }
     git -C "$wt" diff HEAD --binary -- "${globs[@]}" > "$patch"
     if [ ! -s "$patch" ]; then echo "$lane: no changes"; exit 0; fi
     if git -C "$proj" apply --check "$patch" 2>/tmp/crew-apply.err; then
       git -C "$proj" apply "$patch" || exit 1
-      merged=(); while IFS= read -r f; do [ -n "$f" ] && merged+=("$f"); done < <(git -C "$wt" diff HEAD --name-only -- "${globs[@]}")
+      merged=(); while IFS= read -r f; do [ -n "$f" ] && merged+=("$f"); done < <(git -C "$wt" diff HEAD --no-renames --name-only -- "${globs[@]}")
       advance_base ${merged[@]+"${merged[@]}"}
       echo "$lane: merged ($(grep -c '^diff --git' "$patch") files), uncommitted"
     else
@@ -78,7 +81,7 @@ case "$cmd" in
         git -C "$wt" diff HEAD --binary -- "$f" > "$patch.one"
         if git -C "$proj" apply --check "$patch.one" 2>/dev/null; then git -C "$proj" apply "$patch.one"; ok=$((ok + 1)); done_files+=("$f")
         else conflicts="$conflicts$f"$'\n'; fi
-      done < <(git -C "$wt" diff HEAD --name-only -- "${globs[@]}")
+      done < <(git -C "$wt" diff HEAD --no-renames --name-only -- "${globs[@]}")
       rm -f "$patch.one"
       advance_base ${done_files[@]+"${done_files[@]}"}
       [ -z "$conflicts" ] && { echo "$lane: merged ($ok file(s); some were already in the main tree), uncommitted"; exit 0; }

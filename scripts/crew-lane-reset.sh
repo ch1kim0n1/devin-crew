@@ -18,7 +18,7 @@ for l in "${lanes[@]}"; do
     echo "$l: still running, not touched (stop it first)"; continue; fi
   bash "$here/crew-tasks.sh" "$proj" lane "$l" "failed|running" open
   echo idle > "$cd_dir/$l.state"; rm -f "$cd_dir/$l.brain" "$cd_dir/$l.reported" "$crew/lanes/$l.needs-user" "$crew/lanes/$l.model"
-  echo 0 > "$cd_dir/$l.launched"; echo 0 > "$cd_dir/$l.fix"
+  echo 0 > "$cd_dir/$l.launched"; echo 0 > "$cd_dir/$l.fix"; echo 0 > "$cd_dir/$l.envfree"
   if [ "$keep" = 0 ] && [ -f "$crew/lanes/$l.sid" ]; then mv "$crew/lanes/$l.sid" "$crew/lanes/$l.sid.$(date +%H%M%S)"; fi
   echo "$(date '+%F %T') $l lane reset (tasks reopened, model and ${keep:+session }flags cleared)" >> "$crew/events.log"
   echo "$l: reset. Next: relaunch via the conductor (crew-autopilot.sh --detach); after a Devin error add CREW_RETRY_OK=1 only with the user's word."

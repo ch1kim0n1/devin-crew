@@ -28,6 +28,8 @@ A headless `devin -p` prints almost nothing while it works, so "no output" tells
 | `FAILED` / `TIMEOUT` | Exited nonzero / hit the wall clock | Use the error class below |
 | `FINISHED` | Exited 0 | Normal path: verify and QA |
 
+An extra `machine: MACHINE-SATURATED` line, or a state saying a command waits for a heavy slot, means environment, not code (`reference/environment.md`).
+
 "Progress" means a tool result or an assistant message with text or tool calls. Empty replies and Devin's own "continue" prompts are not progress.
 
 ## Error classes (printed with evidence lines and a remedy)

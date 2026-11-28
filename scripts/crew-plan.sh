@@ -12,6 +12,7 @@ set -u
 proj=$(cd "$1" && pwd -P) || exit 2
 mode=${2:-}; shift 2 2>/dev/null
 here="$(cd "$(dirname "$0")" && pwd)"; crew="$proj/.devin-crew"; dr="$crew/draft"
+. "$here/crew-lib.sh"
 trim() { local x=$1; x=${x#"${x%%[![:space:]]*}"}; echo "${x%"${x##*[![:space:]]}"}"; }
 case "$mode" in
   draft)
@@ -36,6 +37,10 @@ Update the draft accordingly (QUESTIONS.md becomes NONE unless something new is 
 8. baseline.cmd: one line, the project's test/build command that should pass before work starts (or an honest \`true\` if none exists and the first task creates one).
 9. milestones/m1.tasks, m2.tasks, ...: each milestone is verifiable on its own; first line \`# <milestone name>\`, then one row per task in the exact format \`| id | lane | scope | depends | acceptance | status |\` with status \`open\`, ids unique across milestones (t1, t2, ...), depends = \`-\` or ids, acceptance = ONE command that fails when the work is wrong (no pipes inside it; put longer checks in a script file the task creates).
 10. prompts/<task-id>.md: one self-contained brief per task (goal, owned files, contracts to honor, the exact verify command, definition of done, what sibling lanes do at the same time). Optionally prompts/<task-id>.role holding one role name; if absent the role is picked from the task's files.
+11. services.txt, only when tests need services that must already be running (database, object store, dev server): one line per service,
+\`<name><TAB><health command><TAB><restart command, optional>\`. These run unattended: restart commands must be safe to repeat (start a stopped
+container), never anything that deletes or resets data. When tests write to a shared database, give each lane its own database name in ROSTER.md.
+This machine: $(machine_cores) cores, $(machine_ram_gb) GB. If every lane has to compile or run browsers (Rust, C++, JVM, E2E), plan at most $(build_lanes_hint) lanes.
 GitHub issues: when a task resolves one, put a line \`issue: <n>\` in its brief (used by per-task PRs: \`Closes #<n>\`); a task that must wait
 for an issue outside this plan to close lists \`#<n>\` in depends.
 Roles you can assign (templates/roles/):
@@ -50,7 +55,7 @@ BRIEF
       if [ "$rc" -ne 0 ]; then printf '%s\n' "$d" | grep -E '^(FAIL|WARN)' | head -6; echo "PLAN STOP: preflight failed (fix above, e.g. run 'devin' once in $proj and accept the workspace trust); nothing was started"; exit 1; fi
       : > "$crew/trusted"
     fi
-    echo "$proj" > "$crew/lanes/plan.workdir"; : > "$crew/lanes/plan.readonly"; rm -f "$dr/QUESTIONS.md" "$dr/PLAN.md"
+    echo "$proj" > "$crew/lanes/plan.workdir"; : > "$crew/lanes/plan.readonly"; rm -f "$dr/QUESTIONS.md" "$dr/PLAN.md" "$dr/services.txt"
     [ -f "$crew/BOARD.md" ] || : > "$crew/BOARD.md"
     CREW_ROLE=architect bash "$here/crew-launch.sh" "$proj" lane plan - "$brief";;
   check)
@@ -105,16 +110,23 @@ BRIEF
     dup=$(awk -F'\t' 'NF>=2{k=$2; if (k in o && o[k]!=$1) print k; o[k]=$1}' "$dr/scopes.txt" 2>/dev/null | head -3)
     [ -z "$dup" ] || prob "two lanes own the same path: $(echo $dup)"
     head -1 "$dr/CONTRACTS.md" 2>/dev/null | grep -q '^version:' || prob "CONTRACTS.md must start with version: 1"
+    sf="$dr/services.txt"; [ -f "$sf" ] || sf="$crew/services.txt"
+    if [ -f "$sf" ]; then
+      badsvc=$(awk -F'\t' '/^[[:space:]]*(#|$)/ {next} NF < 2 || $1 !~ /^[A-Za-z0-9._-]+$/ || $2 == ""' "$sf" | head -1)
+      [ -z "$badsvc" ] || prob "services.txt: each line is <name><TAB><health command>[<TAB><restart command>], got: $badsvc"
+    fi
     say "DRAFT: $nm milestone(s), $ntask task(s), ${nlu:-0} lane(s); baseline: $(head -1 "$dr/baseline.cmd" 2>/dev/null)"
     say "$(head -1 "$dr/PLAN.md" 2>/dev/null)"
     q=$(head -c 900 "$dr/QUESTIONS.md" 2>/dev/null); [ "$(echo $q)" = NONE ] && say "QUESTIONS: none" || { say "QUESTIONS:"; printf '%s\n' "$q" | head -5; }
+    # the user approves these with the plan: they run unattended
+    [ -f "$sf" ] && { say "SERVICES (checked before launch and during the run; restart commands run by themselves):"; grep -vE '^[[:space:]]*(#|$)' "$sf" | head -10 | awk -F'\t' '{print "  " $1 ": check `" $2 "`" ($3 != "" ? ", restart `" $3 "`" : "")}'; }
     exit "$bad";;
   apply|go)
     ship=0; budget=600
     while [ $# -gt 0 ]; do case "$1" in --ship) ship=yes; shift;; --ship-per-task) ship=per-task; shift;; --budget) budget=$2; shift 2;; *) shift;; esac; done
     c=$(bash "$0" "$proj" check) || { printf '%s\n' "$c"; echo "PLAN STOP: fix the problems above (re-draft with --answers, or edit the draft files), then rerun"; exit 1; }
     mkdir -p "$crew/prompts" "$crew/milestones"
-    cp "$dr/PLAN.md" "$crew/PLAN.md"; cp "$dr/SPEC.md" "$crew/SPEC.md"; cp "$dr/CONTRACTS.md" "$crew/CONTRACTS.md"; cp "$dr/ROSTER.md" "$crew/ROSTER.md"; cp "$dr/scopes.txt" "$crew/scopes.txt"; [ -n "$(tail -c1 "$crew/scopes.txt")" ] && echo >> "$crew/scopes.txt"  # a missing final newline hides the last scope from `read` loops
+    cp "$dr/PLAN.md" "$crew/PLAN.md"; cp "$dr/SPEC.md" "$crew/SPEC.md"; cp "$dr/CONTRACTS.md" "$crew/CONTRACTS.md"; cp "$dr/ROSTER.md" "$crew/ROSTER.md"; cp "$dr/scopes.txt" "$crew/scopes.txt"; [ -f "$dr/services.txt" ] && cp "$dr/services.txt" "$crew/services.txt"; [ -n "$(tail -c1 "$crew/scopes.txt")" ] && echo >> "$crew/scopes.txt"  # a missing final newline hides the last scope from `read` loops
     cp "$dr/baseline.cmd" "$crew/baseline.cmd.draft"; cp "$dr"/prompts/* "$crew/prompts/" 2>/dev/null; cp "$dr"/milestones/m*.tasks "$crew/milestones/"
     printf '| id | lane | scope | depends | acceptance | status |\n|----|------|-------|---------|------------|--------|\n' > "$crew/TASKS.md"
     [ -f "$crew/BOARD.md" ] || : > "$crew/BOARD.md"

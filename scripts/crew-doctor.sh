@@ -8,6 +8,7 @@ proj=$(cd "${1:-.}" 2>/dev/null && pwd -P) || { echo "FAIL project folder does n
 trust=0; [ "${2:-}" = "--trust" ] && trust=1
 model=${CREW_MODEL:-$(head -1 "$(dirname "$0")/../MODEL" 2>/dev/null)}; model=${model:-swe-2-flash-high}
 bad=0
+. "$(cd "$(dirname "$0")" && pwd)/crew-lib.sh"
 ok()   { echo "OK   $*"; }
 warn() { echo "WARN $*"; }
 fail() { echo "FAIL $*"; bad=1; }
@@ -78,6 +79,22 @@ free=$(df -k "$proj" 2>/dev/null | awk 'NR==2{print $4}')
 [ "${free:-9999999}" -lt 1000000 ] && warn "under 1GB free disk -> worktrees and snapshots may fail"
 
 crew="$proj/.devin-crew"
+# shared services: lanes launched against a dead database all fail for a reason no code change fixes
+if [ -f "$crew/services.txt" ]; then
+  while IFS= read -r line; do
+    case "$line" in
+      "OK   "*) ok "service ${line#OK   }";;
+      DOWN\ *) n=${line#DOWN }; n=${n%% *}; r=""; case "$line" in *"| restart: "*) r=${line##*| restart: };; esac
+        fail "service $n is down -> start it before launching${r:+ (restart command: $r)}";;
+    esac
+  done < <(bash "$(cd "$(dirname "$0")" && pwd)/crew-services.sh" "$proj" check 2>/dev/null)
+fi
+# every worktree builds and tests on its own: on a small machine many lanes of a compiled or browser-tested stack starve each other
+stack=""; for f in Cargo.toml CMakeLists.txt build.gradle build.gradle.kts pom.xml playwright.config.ts playwright.config.js; do
+  [ -f "$proj/$f" ] && stack="$stack${stack:+, }$f"; done
+k=$(build_lanes_hint)
+[ -n "$stack" ] && [ "$k" -lt 5 ] && warn "build-heavy project ($stack) on $(machine_cores) cores, $(machine_ram_gb) GB -> plan at most $k lanes (each worktree builds and tests on its own)"
+[ -f "$proj/Cargo.toml" ] && ! command -v sccache >/dev/null 2>&1 && echo "note: install sccache so lanes share Rust builds (used automatically once installed)"
 # the skill itself: a stale or half-copied install silently loses the token-saving lanes (conductor, QA, reviewer)
 sk="$(cd "$(dirname "$0")/.." && pwd)"; miss=""
 for f in crew-conduct crew-collect crew-review crew-audit crew-init; do [ -f "$sk/scripts/$f.sh" ] || miss="$miss $f.sh"; done

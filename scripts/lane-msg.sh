@@ -19,6 +19,8 @@ case "$cmd" in
     ;;
   read)
     lane=$1; f="$inbox/$lane.md"; cur="$inbox/$lane.cursor"
+    # a banner, not mail: mail would make the router wake lanes that already finished
+    [ -f "$crew/env.down" ] && echo "ENVIRONMENT DOWN: $(sed -n 2p "$crew/env.down"): do not change code because of failures it causes; check again with crew-services.sh, and if it stays down end with 'BLOCKED: environment <service>'."
     total=$( (wc -l < "$f") 2>/dev/null || echo 0); total=${total//[[:space:]]/}
     seen=$(cat "$cur" 2>/dev/null || echo 0)
     if [ "$total" -gt "$seen" ]; then sed -n "$((seen + 1)),${total}p" "$f"; else echo "(no new mail)"; fi
